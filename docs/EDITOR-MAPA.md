@@ -6,6 +6,8 @@ O acesso de quem já possui conta fica em `/login`, com e-mail e senha. `/setup`
 
 ## Implementado
 
+- Satélite Mapbox: `NEXT_PUBLIC_SATELLITE_STYLE_URL=/api/maps/satellite` e `MAPBOX_PUBLIC_TOKEN` público (`pk.`), sem credenciais no repositório. Usa Static Tiles API, estilo oficial `satellite-v9`, tiles 512 px e zoom até 22; logotipo e créditos preservados. A resolução real depende da cobertura. Validação em 22/10: Raster Tiles API retornou 429 no token demo; Static Tiles retornou 200 image/jpeg. Conta demo mostra limite de 20 mil solicitações Static Tiles. Não foi cadastrado pagamento nem alterado plano; eventual acesso padrão usa franquia e cobrança da Static Tiles API, diferente da Raster Tiles API. Tipo, 22 testes e build aprovados.
+
 - Mapa MapLibre mundial com OpenFreeMap/OpenStreetMap, navegação, escala métrica, coordenadas, busca por nome/código/ID, endereço e latitude/longitude. Ruas, claro, escuro e satélite gratuito EOX 2016 disponíveis. Um estilo de satélite próprio continua opcional.
 - Botão “Minha localização” com indicador de busca, cancelamento, nova tentativa em baixa precisão, marcador e precisão aproximada. Permissão negada, indisponibilidade e tempo esgotado geram mensagens claras. A posição do dispositivo não é cadastrada como equipamento nem salva no banco.
 - Cada cabo possui paleta e seletor de cor, com prévia no mapa antes de salvar. A mudança individual é persistida no próprio cabo e não recolore os demais; o controle de cor da camada continua sendo uma ação coletiva explícita.

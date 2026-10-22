@@ -578,6 +578,22 @@ export default function EditorMap(props: Props) {
   return (
     <div className="editor-map">
       <div ref={host} className="editor-canvas" />
+      {props.styleUrl === "/api/maps/satellite" && (
+        <a
+          className="editor-mapbox-logo"
+          href="https://www.mapbox.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Mapbox"
+        >
+          <img
+            src="/maps/mapbox-logo.svg"
+            alt="Mapbox"
+            width="88"
+            height="23"
+          />
+        </a>
+      )}
       <div className="editor-location-control">
         <button
           type="button"

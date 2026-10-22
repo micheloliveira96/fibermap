@@ -1050,11 +1050,19 @@ export default function OpticalEditor() {
                   }
                 >
                   Satélite
-                  {process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL
-                    ? ""
-                    : " · EOX 2016"}
+                  {process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL ===
+                  "/api/maps/satellite"
+                    ? " · Mapbox"
+                    : process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL
+                      ? ""
+                      : " · EOX 2016"}
                 </option>
               </select>
+              {style === "/api/maps/satellite" && (
+                <small>
+                  Imagens Mapbox. A definição e a data variam conforme o local.
+                </small>
+              )}
               {style === "/maps/satellite.json" && (
                 <small>
                   Imagens de 2016 · cerca de 10 m de resolução. Não mostram
