@@ -8,7 +8,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run tests/network.test.ts",
+    "test": "vitest run",
     "test:integration": "tsx tests/persistence.ts",
     "db:generate": "prisma generate",
     "db:deploy": "prisma migrate deploy",

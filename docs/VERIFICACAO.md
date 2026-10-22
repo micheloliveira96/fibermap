@@ -19,6 +19,9 @@ Um administrador entra na aplicação, cadastra infraestrutura por API, conecta 
 | Domínio | Sete testes unitários: fibras, cores/tubos, capacidade inválida, rastreamento, interrupção, ciclos e splitters em cascata |
 | Dependências | Auditoria npm sem vulnerabilidades após override de deepmerge-ts 8 |
 | Configuração inicial | Teste HTTP em banco isolado valida token inválido, origem externa, uso único, senha com hash e login real |
+| Recarregamento da configuração | Três testes adicionais verificam recuperação do token na mesma aba, expiração e remoção após conclusão |
+
+Em 22/10, a falha reportada foi reproduzida na tela: o token havia sido removido da URL e não era recuperado após reload, deixando o botão de criação desabilitado. A correção mantém o token na sessão da aba por até uma hora e autentica após o cadastro. A verificação hospedada com conta temporária confirmou criação (201), login (200), inventário autenticado (200) e página principal autenticada (200); a conta de teste foi removida ao final. A suíte unitária passou com dez testes e o teste HTTP de configuração isolado também passou.
 
 A publicação na Vercel alcançou READY. A conexão direta IPv6 foi substituída pelo Supavisor com o hostname fornecido pelo responsável. Após a correção, `/api/health` retornou 200 e `/api/network` sem sessão retornou 401. O código foi enviado ao repositório público por autorização explícita; segredos e documentos locais de hospedagem não foram enviados. O acesso do primeiro administrador depende da configuração pelo link privado de uso único.
 
