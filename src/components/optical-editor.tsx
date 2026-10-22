@@ -153,6 +153,7 @@ export default function OpticalEditor() {
     [vertex, setVertex] = useState<number[] | null>(null),
     [tab, setTab] = useState("properties"),
     [style, setStyle] = useState(
+      process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL ||
       process.env.NEXT_PUBLIC_MAP_STYLE_URL ||
         "https://tiles.openfreemap.org/styles/liberty",
     ),
