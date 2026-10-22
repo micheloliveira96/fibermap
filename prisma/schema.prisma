@@ -64,6 +64,10 @@ model Organization {
   connections NetworkConnection[]
   audits AuditLog[]
   internalLinks InternalLink[]
+  projects NetworkProject[]
+  layers MapLayer[]
+  imports ImportBatch[]
+  segments CableSegment[]
 }
 enum Role {
   ADMIN
@@ -95,6 +99,9 @@ enum AssetKind {
   POLE
   DUCT
   RESERVE
+  COVERAGE
+  WAYPOINT
+  IMPORTED
 }
 enum Status {
   PLANNED
@@ -113,15 +120,91 @@ model Asset {
   geometry Json
   spatial Unsupported("geometry(Geometry,4326)")?
   metadata Json @default("{}")
+  projectId String?
+  layerId String?
+  importBatchId String?
+  project NetworkProject? @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  layer MapLayer? @relation(fields: [layerId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  importBatch ImportBatch? @relation(fields: [importBatchId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  color String @default("#18a99b")
+  geographicLengthM Float @default(0)
+  physicalLengthM Float?
+  reserveM Float @default(0)
+  manufacturer String?
+  originLabel String?
+  destinationLabel String?
+  notes String?
+  installedAt DateTime?
+  parentId String?
+  parent Asset? @relation("AssetContainer", fields: [parentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  children Asset[] @relation("AssetContainer")
+  locatedConnections NetworkConnection[]
   version Int @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   fibers FiberStrand[]
   terminals OpticalTerminal[]
   internalLinks InternalLink[]
+  segments CableSegment[]
   @@unique([organizationId, code])
   @@unique([id, organizationId])
   @@index([organizationId, kind, status])
+  @@index([organizationId, projectId, layerId])
+  @@index([parentId, organizationId])
+}
+model NetworkProject {
+  id String @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name String
+  colorPattern Json @default("[\"Azul\",\"Laranja\",\"Verde\",\"Marrom\",\"Cinza\",\"Branco\",\"Vermelho\",\"Preto\",\"Amarelo\",\"Violeta\",\"Rosa\",\"Turquesa\"]")
+  createdAt DateTime @default(now())
+  assets Asset[]
+  layers MapLayer[]
+  imports ImportBatch[]
+  @@unique([id, organizationId])
+  @@unique([organizationId, name])
+}
+model MapLayer {
+  id String @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  projectId String?
+  project NetworkProject? @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  name String
+  color String @default("#18a99b")
+  visible Boolean @default(true)
+  version Int @default(1)
+  assets Asset[]
+  @@unique([id, organizationId])
+  @@index([organizationId, projectId])
+}
+model ImportBatch {
+  id String @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  projectId String
+  project NetworkProject @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  filename String
+  digest String
+  source Bytes
+  createdAt DateTime @default(now())
+  assets Asset[]
+  @@unique([id, organizationId])
+  @@unique([organizationId, digest])
+}
+model CableSegment {
+  id String @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  assetId String
+  asset Asset @relation(fields: [assetId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  position Int
+  geometry Json
+  spatial Unsupported("geometry(LineString,4326)")?
+  lengthM Float
+  @@unique([assetId, position])
+  @@index([organizationId])
 }
 enum FiberStatus {
   AVAILABLE
@@ -189,11 +272,14 @@ model NetworkConnection {
   organizationId String
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   kind ConnectionKind
+  locationId String?
+  location Asset? @relation(fields: [locationId, organizationId], references: [id, organizationId], onDelete: Restrict)
   tray String?
   lossDb Float @default(0)
   createdAt DateTime @default(now())
   terminals ConnectionTerminal[]
   @@unique([id, organizationId])
+  @@index([locationId, organizationId])
 }
 model ConnectionTerminal {
   terminalId String @id

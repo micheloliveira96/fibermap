@@ -1,5 +1,7 @@
 # FiberMap — execução por etapas
 
+> Registro histórico da fundação. Para a entrega atual do mapa e editor, consulte [EDITOR-MAPA.md](EDITOR-MAPA.md).
+
 O pedido original termina em “ETAPA 2 — Infraestrutura / POP / -”. Esta entrega inicia a implementação, não equivale à plataforma inteira homologada.
 
 ## Implementado nesta fundação

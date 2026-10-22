@@ -10,6 +10,7 @@ export default function NetworkMap({ assets, mode, onDraw, onSelect, highlighted
   const style = process.env.NEXT_PUBLIC_MAP_STYLE_URL;
   useEffect(() => {
     if (!host.current || !style) return;
+    maplibregl.setWorkerUrl('/vendor/maplibre/maplibre-gl-worker.mjs');
     const m = new maplibregl.Map({ container: host.current, style, center: [-46.6333, -23.5505], zoom: 12 }); map.current = m;
     m.addControl(new maplibregl.NavigationControl(), 'bottom-right');
     m.addControl(new maplibregl.ScaleControl({ unit: 'metric' }));
