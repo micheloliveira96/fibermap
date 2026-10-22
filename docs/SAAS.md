@@ -62,3 +62,8 @@ ESLint usa a API de compatibilidade TypeScript 6 em paralelo ao compilador nativ
 ## Produção
 
 Migrações 007–010 aplicadas no Supabase existente e registradas no ledger Prisma. Nenhum projeto Vercel, banco ou domínio novo criado. Commit e implantação final são registrados no relatório da conversa após confirmação READY e verificação das rotas publicadas.
+
+Publicação confirmada READY: commit `f69c35c8eec9f5315078b1a14dc7f5e0f74e6e04`, branch `main`, implantação `dpl_FAXVHXaBQqgYT8DDU1Ek2GeMV64m` (`fibermap-44s8m8e0a-micheloliveira96.vercel.app`). Os aliases `fibermap-five.vercel.app` e `fibermap-micheloliveira96.vercel.app` foram mantidos. `/api/health` retornou 200; APIs de plataforma, usuários e rede retornaram 401 sem sessão. No navegador de produção, a conta empresarial existente carregou licença ativa e os 3 elementos preservados; tentativa de abrir o painel global redirecionou para a própria conta, sem expor a administração da plataforma. O verificador Supabase manteve apenas o aviso informativo preexistente do ledger Prisma deliberadamente inacessível ao runtime.
+
+O bootstrap de produção foi executado para o e-mail indicado pelo titular. Foi criada a identidade de plataforma sem senha fixa e aberta a tela de primeiro acesso com token privado de uma hora. A configuração da senha e a validação final do login desse titular dependem da ação dele. O mesmo fluxo foi testado com conta descartável em build local de produção, após reinício: definição de senha, rejeição da reutilização do token, login e autorização de plataforma passaram. Não se afirma que o titular já entrou nem que os testes completos com empresas descartáveis foram repetidos em produção; o ciclo de hierarquia/isolamento foi executado no PostgreSQL local real.
+
