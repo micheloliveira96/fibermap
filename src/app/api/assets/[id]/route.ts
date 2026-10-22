@@ -1,6 +1,7 @@
+import { assetPermission } from "@/lib/permissions";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin } from "@/lib/access";
+import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { assetSchema } from "@/lib/asset-input";
 import {
   createAsset,
@@ -18,6 +19,7 @@ export async function PATCH(r: Request, c: Context) {
     const d = assetSchema
       .extend({ version: z.number().int().positive() })
       .parse(await r.json());
+    requirePermission(m,assetPermission(d.kind,"edit"));
     const out = await db.$transaction(async (tx) => {
       const a = await tx.asset.findFirst({
         where: { id, organizationId: m.organizationId },
@@ -97,6 +99,7 @@ export async function DELETE(r: Request, c: Context) {
           409,
           "Elemento inexistente ou alterado. Recarregue.",
         );
+      requirePermission(m,assetPermission(a.kind,"delete"));
       const locked = await tx.asset.updateMany({
         where: { id, organizationId: m.organizationId, version },
         data: { version: { increment: 1 } },
@@ -153,6 +156,7 @@ export async function POST(r: Request, c: Context) {
       include: inventoryInclude,
     });
     if (!a) throw new ApiError(404, "Elemento não encontrado.");
+    requirePermission(m,assetPermission(a.kind,"create"));
     const parsed = assetSchema.parse({
       ...a,
       ...d,

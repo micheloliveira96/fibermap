@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin } from "@/lib/access";
+import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import {
   coordinateSchema,
   geometrySchema,
@@ -19,6 +19,7 @@ export async function POST(r: Request, c: { params: Promise<{ id: string }> }) {
           confirmConnections: z.boolean().default(false),
         })
         .parse(await r.json());
+    requirePermission(m,"cable.edit");
     const result = await db.$transaction(async (tx) => {
       const a = await tx.asset.findFirst({
         where: { id, organizationId: m.organizationId, version: d.version },

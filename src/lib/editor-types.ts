@@ -32,6 +32,7 @@ export type Layer = {
 };
 export type MapData = {
   role: string;
+  permissions?: string[];
   projects: { id: string; name: string; colorPattern: string[] }[];
   layers: Layer[];
   connections: {

@@ -13,9 +13,11 @@ model User {
   image String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
   sessions Session[]
   accounts Account[]
   memberships Membership[]
+  platformAdministrator PlatformAdministrator?
 }
 model Session {
   id String @id
@@ -58,6 +60,11 @@ model Verification {
 model Organization {
   id String @id @default(cuid())
   name String
+  profile Json @default("{}")
+  status String @default("ACTIVE")
+  createdAt DateTime @default(now())
+  license License?
+  invitations UserInvitation[]
   memberships Membership[]
   assets Asset[]
   terminals OpticalTerminal[]
@@ -70,6 +77,8 @@ model Organization {
   segments CableSegment[]
 }
 enum Role {
+  OWNER
+  OPERATOR
   ADMIN
   ENGINEER
   TECHNICIAN
@@ -80,9 +89,88 @@ model Membership {
   userId String
   organizationId String
   role Role @default(VIEWER)
+  active Boolean @default(true)
+  customPermissions Boolean @default(false)
+  permissions String[] @default([])
+  delegable String[] @default([])
+  parentId String?
+  parent Membership? @relation("Delegation", fields: [parentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  children Membership[] @relation("Delegation")
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   @@unique([userId, organizationId])
+  @@unique([id, organizationId])
+}
+
+model PlatformAdministrator {
+  userId String @id
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+}
+model SubscriptionPlan {
+  id String @id @default(cuid())
+  name String
+  description String @default("")
+  priceCents Int @default(0)
+  currency String @default("BRL")
+  period String @default("MONTHLY")
+  maxUsers Int
+  maxProjects Int
+  maxStorageBytes BigInt
+  features String[] @default([])
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  licenses License[]
+}
+model License {
+  organizationId String @id
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  planId String?
+  plan SubscriptionPlan? @relation(fields: [planId], references: [id], onDelete: Restrict)
+  status String @default("ACTIVE")
+  expiresAt DateTime?
+  maxUsers Int @default(100)
+  maxProjects Int @default(100)
+  maxStorageBytes BigInt @default(1073741824)
+  features String[] @default([])
+  expiryPolicy String @default("READ_ONLY")
+  billingStatus String @default("MANUAL")
+  updatedAt DateTime @updatedAt
+}
+model UserInvitation {
+  id String @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  email String
+  name String
+  role Role
+  permissions String[] @default([])
+  delegable String[] @default([])
+  creatorId String
+  tokenHash String @unique
+  purpose String @default("INVITE")
+  expiresAt DateTime
+  acceptedAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([organizationId, email])
+}
+model AdministrativeAudit {
+  id String @id @default(cuid())
+  organizationId String?
+  actorId String
+  action String
+  entityId String
+  detail Json @default("{}")
+  result String @default("SUCCESS")
+  createdAt DateTime @default(now())
+  @@index([organizationId, createdAt])
+}
+model PlatformSettings {
+  id String @id @default("global")
+  name String @default("FiberMap")
+  supportEmail String @default("")
+  updatedAt DateTime @updatedAt
 }
 enum AssetKind {
   POP
@@ -223,6 +311,7 @@ model FiberStrand {
   status FiberStatus @default(AVAILABLE)
   terminals OpticalTerminal[]
   @@unique([assetId, number])
+  @@unique([id, assetId])
 }
 enum TerminalKind {
   FIBER_A
@@ -241,7 +330,7 @@ model OpticalTerminal {
   assetId String
   asset Asset @relation(fields: [assetId, organizationId], references: [id, organizationId], onDelete: Restrict)
   fiberId String?
-  fiber FiberStrand? @relation(fields: [fiberId], references: [id], onDelete: Restrict)
+  fiber FiberStrand? @relation(fields: [fiberId, assetId], references: [id, assetId], onDelete: Restrict)
   label String
   kind TerminalKind
   links ConnectionTerminal[]

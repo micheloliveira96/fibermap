@@ -21,7 +21,11 @@ export default function Login() {
             });
             if (result.error)
               setError("Não foi possível entrar. Confira suas credenciais.");
-            else window.location.assign("/");
+            else {
+              const account=await fetch('/api/conta').then(r=>r.json());
+              if(account.blocked){setError(account.error);await client.signOut();}
+              else window.location.assign(account.destination||'/');
+            }
           } catch {
             setError("Serviço indisponível. Confira a configuração do banco.");
           } finally {
@@ -55,6 +59,7 @@ export default function Login() {
           {busy ? "Entrando…" : "Entrar na plataforma"}
         </button>
         <small>Contas e permissões são provisionadas pelo administrador.</small>
+        <a href="/recuperar">Esqueci minha senha</a>
       </form>
     </main>
   );

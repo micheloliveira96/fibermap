@@ -14,7 +14,10 @@
     "db:deploy": "prisma migrate deploy",
     "bootstrap": "tsx scripts/bootstrap.ts",
     "test:editor": "tsx tests/editor-http.ts",
-    "test:http": "tsx tests/http.ts"
+    "test:http": "tsx tests/http.ts",
+    "test:saas": "tsx tests/saas-http.ts",
+    "bootstrap:platform": "tsx scripts/bootstrap-platform.ts",
+    "lint": "eslint src"
   },
   "keywords": [],
   "author": "",
@@ -25,6 +28,7 @@
     "@radix-ui/react-slot": "^1.5.0",
     "@tmcw/togeojson": "^7.1.3",
     "@turf/turf": "^7.4.0",
+    "@xmldom/xmldom": "^0.9.12",
     "better-auth": "^1.7.12",
     "clsx": "^2.1.1",
     "dotenv": "^18.0.8",
@@ -35,8 +39,7 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tailwind-merge": "^3.7.0",
-    "zod": "^4.6.7",
-    "@xmldom/xmldom": "^0.9.12"
+    "zod": "^4.6.7"
   },
   "private": true,
   "devDependencies": {
@@ -45,11 +48,14 @@
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.2",
     "prettier": "^3.9.10",
     "prisma": "^6.19.3",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^5.0.5"
   },
   "overrides": {

@@ -1,9 +1,10 @@
+import { assetPermission } from "@/lib/permissions";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { createHash, randomUUID } from "node:crypto";
 import { DOMParser } from "@xmldom/xmldom";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin } from "@/lib/access";
+import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { readKml, MAX_FILE } from "@/lib/kml";
 import { assetSchema } from "@/lib/asset-input";
 import { createAsset } from "@/lib/inventory";
@@ -11,7 +12,7 @@ export const maxDuration = 60;
 export async function POST(r: Request) {
   try {
     sameOrigin(r);
-    const m = await access(true);
+    const m = await access(true); requirePermission(m,"network.import");
     if (Number(r.headers.get("content-length") ?? 0) > 2500000)
       throw new ApiError(413, "Arquivo muito grande.");
     const raw = await r.text();
@@ -34,6 +35,8 @@ export async function POST(r: Request) {
           .max(100),
       })
       .parse(JSON.parse(raw));
+    for(const item of d.selected) requirePermission(m,assetPermission(item.kind,"create"));
+    if(!d.projectId) requirePermission(m,"projects.create");
     const bytes = Buffer.from(d.source, "base64");
     if (bytes.length > MAX_FILE) throw new ApiError(413, "Limite de 1,5 MB.");
     if (new Set(d.selected.map((s) => s.id)).size !== d.selected.length)

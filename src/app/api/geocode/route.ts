@@ -1,10 +1,11 @@
-import { access, ApiError, failure } from "@/lib/access";
+import { access, ApiError, failure, requirePermission } from "@/lib/access";
 const cache = new Map<string, { at: number; features: unknown[] }>(),
   requests = new Map<string, number>();
 export async function GET(r: Request) {
   try {
     const m = await access(),
       q = new URL(r.url).searchParams.get("q")?.trim() ?? "";
+    requirePermission(m,"map.view");
     if (q.length < 3 || q.length > 160)
       throw new ApiError(400, "Informe um endereço entre 3 e 160 caracteres.");
     const hit = cache.get(q);

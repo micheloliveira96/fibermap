@@ -183,7 +183,7 @@ export default function OpticalEditor() {
     initializedFocus = useRef(false),
     abort = useRef(false),
     lastCoordinate = useRef(0);
-  const writable = ready && ["ADMIN", "ENGINEER"].includes(meta.role);
+  const writable = ready && Boolean(meta.permissions?.some(p=>p.endsWith('.create') || p.endsWith('.edit')));
   const load = useCallback(async () => {
     const [data, map] = await Promise.all([
       request("/api/network"),
@@ -519,6 +519,7 @@ export default function OpticalEditor() {
   }
   async function exportData(type: string) {
     await run(async () => {
+      if(!meta.permissions?.includes('network.export')) throw new Error('Seu perfil não permite exportar informações.');
       if (type === "backup") {
         download(
           JSON.stringify(await request("/api/backup"), null, 2),
@@ -710,7 +711,7 @@ export default function OpticalEditor() {
           className="editor-export"
           aria-label="Exportar rede"
           defaultValue=""
-          disabled={busy}
+          disabled={busy || !meta.permissions?.includes('network.export')}
           onChange={(e) => {
             const value = e.target.value;
             e.target.value = "";
@@ -735,6 +736,7 @@ export default function OpticalEditor() {
         <a className="editor-inventory" href="/inventario">
           Inventário técnico ↗
         </a>
+        <a href="/conta" title="Conta e administração">Minha conta</a>
       </header>
       <input
         ref={fileInput}

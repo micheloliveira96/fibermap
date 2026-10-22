@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin } from "@/lib/access";
+import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 export async function PATCH(
   r: Request,
   c: { params: Promise<{ id: string }> },
@@ -16,6 +16,7 @@ export async function PATCH(
           version: z.number().int(),
         })
         .parse(await r.json());
+    requirePermission(m,"connections.edit");
     await db.$transaction(async (tx) => {
       const a = await tx.asset.updateMany({
         where: { id, organizationId: m.organizationId, version: d.version },

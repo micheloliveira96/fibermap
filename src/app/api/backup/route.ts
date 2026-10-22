@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
-import { access, failure } from "@/lib/access";
+import { access, failure, requirePermission } from "@/lib/access";
 import { inventoryInclude } from "@/lib/inventory";
 export async function GET() {
   try {
-    const m = await access();
+    const m = await access(); requirePermission(m,"network.export");
     const out = await db.$transaction(
       async (tx) => {
         const where = { organizationId: m.organizationId };
@@ -27,7 +27,7 @@ export async function GET() {
             where,
             include: { terminals: true },
           }),
-          audit: await tx.auditLog.findMany({ where }),
+          audit: m.permissions.includes('audit.view') ? await tx.auditLog.findMany({ where }) : [],
         };
       },
       { isolationLevel: "RepeatableRead", timeout: 20000 },

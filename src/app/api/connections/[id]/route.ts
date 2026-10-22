@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin } from "@/lib/access";
+import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 export async function DELETE(
   r: Request,
   c: { params: Promise<{ id: string }> },
@@ -8,6 +8,7 @@ export async function DELETE(
     sameOrigin(r);
     const m = await access(true),
       { id } = await c.params;
+    requirePermission(m,"connections.edit");
     await db.$transaction(
       async (tx) => {
         const connection = await tx.networkConnection.findFirst({

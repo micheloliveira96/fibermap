@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin } from "@/lib/access";
+import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { validatePlacement } from "@/lib/inventory";
+import { assetPermission } from "@/lib/permissions";
 const input = z.object({
   type: z.enum(["project", "layer"]),
   id: z.string().optional(),
@@ -21,7 +22,7 @@ const input = z.object({
 });
 export async function GET() {
   try {
-    const m = await access();
+    const m = await access(); requirePermission(m,"map.view");
     const where = { organizationId: m.organizationId };
     const [projects, layers, imports, audits, connections] = await Promise.all([
       db.networkProject.findMany({ where, orderBy: { name: "asc" } }),
@@ -30,15 +31,15 @@ export async function GET() {
         where,
         select: { id: true, filename: true, projectId: true, createdAt: true },
       }),
-      db.auditLog.findMany({
+      m.permissions.includes("audit.view") ? db.auditLog.findMany({
         where,
         orderBy: { createdAt: "desc" },
         take: 100,
-      }),
+      }) : Promise.resolve([]),
       db.networkConnection.findMany({ where, include: { terminals: true } }),
     ]);
     return Response.json(
-      { role: m.role, projects, layers, imports, audits, connections },
+      { role: m.role, permissions:m.permissions, projects, layers, imports, audits, connections },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (e) {
@@ -50,6 +51,7 @@ export async function POST(r: Request) {
     sameOrigin(r);
     const m = await access(true),
       d = input.parse(await r.json());
+    requirePermission(m,d.type==="project" ? d.id?"projects.edit":"projects.create" : "layers.edit");
     const result = await db.$transaction(async (tx) => {
       await validatePlacement(tx, m.organizationId, { projectId: d.projectId });
       if (d.type === "project") {
@@ -96,10 +98,14 @@ export async function POST(r: Request) {
             "Camada alterada por outra sessão. Recarregue.",
           );
         if (before && before.color !== d.color)
+        {
+          const affected=await tx.asset.findMany({where:{layerId:d.id,organizationId:m.organizationId},select:{kind:true},distinct:['kind']});
+          for(const asset of affected)requirePermission(m,assetPermission(asset.kind,'edit'));
           await tx.asset.updateMany({
             where: { layerId: d.id, organizationId: m.organizationId },
             data: { color: d.color, version: { increment: 1 } },
           });
+        }
         await tx.auditLog.create({
           data: {
             organizationId: m.organizationId,

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin } from "@/lib/access";
+import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { z } from "zod";
 const schema = z.object({
   a: z.string(),
@@ -14,6 +14,7 @@ export async function POST(request: Request) {
     sameOrigin(request);
     const member = await access(true),
       data = schema.parse(await request.json());
+    requirePermission(member,"connections.edit");
     if (data.a === data.b)
       throw new ApiError(400, "Selecione dois terminais diferentes.");
     const result = await db.$transaction(

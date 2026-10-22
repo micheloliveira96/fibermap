@@ -496,6 +496,8 @@ try {
   await db.membership.deleteMany({
     where: { organizationId: { in: [org, other] } },
   });
+  await db.administrativeAudit.deleteMany({where:{organizationId:{in:[org,other]}}});
+  await db.license.deleteMany({where:{organizationId:{in:[org,other]}}});
   await db.organization.deleteMany({ where: { id: { in: [org, other] } } });
   await db.user.deleteMany({ where: { id: user } });
   await db.$disconnect();

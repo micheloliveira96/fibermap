@@ -1,6 +1,7 @@
+import { assetPermission } from "@/lib/permissions";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin } from "@/lib/access";
+import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { assetSchema } from "@/lib/asset-input";
 import { populateTerminals, validatePlacement } from "@/lib/inventory";
 import { compatible } from "@/lib/geo";
@@ -21,6 +22,7 @@ export async function POST(r: Request, c: { params: Promise<{ id: string }> }) {
       })
       .extend({ version: z.number().int(), confirm: z.literal(true) })
       .parse(await r.json());
+    requirePermission(m,"equipment.edit"); requirePermission(m,assetPermission(input.kind,"create"));
     await db.$transaction(
       async (tx) => {
         const a = await tx.asset.findFirst({
