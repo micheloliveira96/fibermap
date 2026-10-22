@@ -30,6 +30,6 @@ O pedido original termina em “ETAPA 2 — Infraestrutura / POP / -”. Esta en
 - Importação com prévia, PDF/CSV/XLSX/KML, relatórios, gráficos e regiões.
 - Histórico visual, edição otimista, desativação e exclusão com dependências; retenção, recuperação de senha, revogação de sessões e administração de membros.
 - Testes de navegador em computadores/tablets/celulares, auditoria de segurança e recuperação de backup.
-- Criar repositório remoto e provisionar banco/Vercel em contas autorizadas.
+- Finalizar a integração de deploy automático entre o GitHub e o projeto Vercel existente. Repositório remoto público (autorizado), PostgreSQL/PostGIS hospedado e publicação Vercel já foram criados; a conexão de banco e a proteção anônima das APIs foram verificadas.
 
 Nenhuma telemetria, integração SNMP ou interpretação de OTDR está implementada.

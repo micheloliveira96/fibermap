@@ -20,7 +20,7 @@ Um administrador entra na aplicação, cadastra infraestrutura por API, conecta 
 | Dependências | Auditoria npm sem vulnerabilidades após override de deepmerge-ts 8 |
 | Configuração inicial | Teste HTTP em banco isolado valida token inválido, origem externa, uso único, senha com hash e login real |
 
-O primeiro deploy na Vercel alcançou READY, porém `/api/health` retornou 503 na conexão direta IPv6. A conexão via Supavisor ainda depende do hostname exato apresentado no painel do projeto. A publicação não deve ser considerada operacional enquanto esse teste não retornar 200.
+A publicação na Vercel alcançou READY. A conexão direta IPv6 foi substituída pelo Supavisor com o hostname fornecido pelo responsável. Após a correção, `/api/health` retornou 200 e `/api/network` sem sessão retornou 401. O código foi enviado ao repositório público por autorização explícita; segredos e documentos locais de hospedagem não foram enviados. O acesso do primeiro administrador depende da configuração pelo link privado de uso único.
 
 Os dados e usuários criados pelos testes são removidos ao final. O banco operacional permanece sem infraestrutura fictícia. As fixtures usam coordenadas sintéticas apenas em testes.
 
