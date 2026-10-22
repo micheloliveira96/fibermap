@@ -1,0 +1,215 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id
+  name String
+  email String @unique
+  emailVerified Boolean @default(false)
+  image String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sessions Session[]
+  accounts Account[]
+  memberships Membership[]
+}
+model Session {
+  id String @id
+  expiresAt DateTime
+  token String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+model Account {
+  id String @id
+  accountId String
+  providerId String
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken String?
+  refreshToken String?
+  idToken String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope String?
+  password String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId])
+}
+model Verification {
+  id String @id
+  identifier String
+  value String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([identifier])
+}
+model Organization {
+  id String @id @default(cuid())
+  name String
+  memberships Membership[]
+  assets Asset[]
+  terminals OpticalTerminal[]
+  connections NetworkConnection[]
+  audits AuditLog[]
+  internalLinks InternalLink[]
+}
+enum Role {
+  ADMIN
+  ENGINEER
+  TECHNICIAN
+  VIEWER
+}
+model Membership {
+  id String @id @default(cuid())
+  userId String
+  organizationId String
+  role Role @default(VIEWER)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  @@unique([userId, organizationId])
+}
+enum AssetKind {
+  POP
+  OLT
+  DIO
+  BACKBONE
+  DISTRIBUTION
+  DERIVATION
+  DROP
+  CLOSURE
+  CTO
+  SPLITTER
+  CUSTOMER
+  POLE
+  DUCT
+  RESERVE
+}
+enum Status {
+  PLANNED
+  INSTALLED
+  MAINTENANCE
+  DISABLED
+}
+model Asset {
+  id String @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  code String
+  name String
+  kind AssetKind
+  status Status @default(PLANNED)
+  geometry Json
+  spatial Unsupported("geometry(Geometry,4326)")?
+  metadata Json @default("{}")
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  fibers FiberStrand[]
+  terminals OpticalTerminal[]
+  internalLinks InternalLink[]
+  @@unique([organizationId, code])
+  @@unique([id, organizationId])
+  @@index([organizationId, kind, status])
+}
+enum FiberStatus {
+  AVAILABLE
+  RESERVED
+  DAMAGED
+  BLOCKED
+}
+model FiberStrand {
+  id String @id @default(cuid())
+  assetId String
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  number Int
+  tube Int
+  color String
+  tubeColor String
+  status FiberStatus @default(AVAILABLE)
+  terminals OpticalTerminal[]
+  @@unique([assetId, number])
+}
+enum TerminalKind {
+  FIBER_A
+  FIBER_B
+  PON
+  DIO
+  CTO
+  SPLITTER_IN
+  SPLITTER_OUT
+  CUSTOMER
+}
+model OpticalTerminal {
+  id String @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  assetId String
+  asset Asset @relation(fields: [assetId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  fiberId String?
+  fiber FiberStrand? @relation(fields: [fiberId], references: [id], onDelete: Restrict)
+  label String
+  kind TerminalKind
+  links ConnectionTerminal[]
+  internalA InternalLink[] @relation("InternalA")
+  internalB InternalLink[] @relation("InternalB")
+  @@unique([assetId, label])
+  @@unique([id, organizationId])
+}
+model InternalLink {
+  id String @id @default(cuid())
+  organizationId String
+  assetId String
+  aId String @unique
+  bId String @unique
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  asset Asset @relation(fields: [assetId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  a OpticalTerminal @relation("InternalA", fields: [aId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  b OpticalTerminal @relation("InternalB", fields: [bId, organizationId], references: [id, organizationId], onDelete: Restrict)
+}
+enum ConnectionKind {
+  SPLICE
+  PASS_THROUGH
+  PATCH
+  DOCUMENTARY
+}
+model NetworkConnection {
+  id String @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  kind ConnectionKind
+  tray String?
+  lossDb Float @default(0)
+  createdAt DateTime @default(now())
+  terminals ConnectionTerminal[]
+  @@unique([id, organizationId])
+}
+model ConnectionTerminal {
+  terminalId String @id
+  organizationId String
+  connectionId String
+  terminal OpticalTerminal @relation(fields: [terminalId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  connection NetworkConnection @relation(fields: [connectionId, organizationId], references: [id, organizationId], onDelete: Restrict)
+}
+model AuditLog {
+  id String @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actorId String
+  action String
+  entityId String
+  detail Json
+  createdAt DateTime @default(now())
+  @@index([organizationId, createdAt])
+}
