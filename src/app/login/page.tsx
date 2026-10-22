@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { createAuthClient } from "better-auth/react";
 import { Network } from "lucide-react";
+import { PasswordField } from "@/components/password-field";
 const client = createAuthClient();
 export default function Login() {
   const [error, setError] = useState(""),
@@ -45,15 +46,7 @@ export default function Login() {
           E-mail
           <input name="email" type="email" autoComplete="username" required />
         </label>
-        <label>
-          Senha
-          <input
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-          />
-        </label>
+        <PasswordField />
         {error && <p role="alert">{error}</p>}
         <button className="primary" disabled={busy}>
           {busy ? "Entrando…" : "Entrar na plataforma"}
