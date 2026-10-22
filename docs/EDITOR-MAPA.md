@@ -2,6 +2,8 @@
 
 Entrega de 22/10/2026 sobre a fundação Next.js 16, Better Auth, Prisma e PostgreSQL/PostGIS existentes. O editor é a página inicial; o painel anterior permanece em `/inventario`.
 
+O acesso de quem já possui conta fica em `/login`, com e-mail e senha. `/setup` é exclusivo para o primeiro administrador: com ambiente já configurado, encaminha para o login; com sessão ativa, encaminha para o mapa. O formulário inicial também oferece o link “Já tenho cadastro — Entrar”.
+
 ## Implementado
 
 - Mapa MapLibre mundial com OpenFreeMap/OpenStreetMap, navegação, escala métrica, coordenadas, busca por nome/código/ID, endereço e latitude/longitude. GPS depende da autorização do navegador. Ruas, claro e escuro disponíveis; satélite aparece somente quando configurado pelo operador.
