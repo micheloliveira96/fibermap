@@ -102,12 +102,16 @@ try {
     "POST",
     201,
   );
-  await ok('/api/map',{...layer,type:'layer',color:'#cc6633'});
-  assert.equal((await call('/api/map',{...layer,type:'layer',visible:false})).status,409);
+  await ok("/api/map", { ...layer, type: "layer", color: "#cc6633" });
+  assert.equal(
+    (await call("/api/map", { ...layer, type: "layer", visible: false }))
+      .status,
+    409,
+  );
   let assets = await ok("/api/network");
   cable = assets.find((a: { id: string }) => a.id === cable.id);
   assert.equal(cable.fibers.length, 24);
-  assert.equal(cable.color,'#cc6633');
+  assert.equal(cable.color, "#cc6633");
   assert.equal(cable.fibers[0].color, "Vermelho");
   assert.ok(cable.geographicLengthM > 2000);
   const fiberIds = cable.fibers.map((f: { id: string }) => f.id);
@@ -250,6 +254,20 @@ try {
   );
   const secondRead = (await ok("/api/network")).find(
     (a: { id: string }) => a.id === second.id,
+  );
+  updated = await ok(
+    "/api/assets/" + updated.id,
+    { ...updated, color: "#2563eb" },
+    "PATCH",
+  );
+  const recolored = await ok("/api/network");
+  assert.equal(
+    recolored.find((a: { id: string }) => a.id === updated.id).color,
+    "#2563eb",
+  );
+  assert.equal(
+    recolored.find((a: { id: string }) => a.id === second.id).color,
+    secondRead.color,
   );
   const fusion = await ok(
     "/api/connections",

@@ -6,6 +6,8 @@ import type { EditorAsset } from "@/lib/editor-types";
 import type { Coordinate, MapGeometry } from "@/lib/geo";
 import { vertices, moveVertex, cameraCoordinates } from "@/lib/vertices";
 import { kinds } from "@/lib/types";
+import { LocateFixed, X } from "lucide-react";
+import { locateDevice } from "@/lib/location";
 type Props = {
   assets: EditorAsset[];
   preview: { id: number; geometry: MapGeometry; color: string; name: string }[];
@@ -16,6 +18,7 @@ type Props = {
   styleUrl: string;
   focus: MapGeometry | null;
   highlighted: string[];
+  draftColor: string;
   onSelect: (a: EditorAsset) => void;
   onClick: (at: Coordinate) => void;
   onFinish: () => void;
@@ -31,10 +34,80 @@ export default function EditorMap(props: Props) {
   const host = useRef<HTMLDivElement>(null),
     map = useRef<ml.Map | null>(null),
     state = useRef(props),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [locating, setLocating] = useState(false),
+    [locationStatus, setLocationStatus] = useState("");
+  const locationRequest = useRef<AbortController | null>(null),
+    locationMarker = useRef<ml.Marker | null>(null);
   state.current = props;
   const drag = useRef<{ path: number[]; geometry: MapGeometry } | null>(null),
     suppress = useRef(false);
+  async function findLocation() {
+    if (!window.isSecureContext) {
+      setLocationStatus("A localização precisa de uma conexão HTTPS.");
+      return;
+    }
+    if (!navigator.geolocation) {
+      setLocationStatus(
+        "Este navegador não oferece localização. Abra o FiberMap no navegador do aparelho.",
+      );
+      return;
+    }
+    locationRequest.current?.abort();
+    const controller = new AbortController();
+    locationRequest.current = controller;
+    setLocating(true);
+    setLocationStatus(
+      "Buscando sua posição. Autorize a localização se o navegador solicitar.",
+    );
+    try {
+      const position = await locateDevice(
+          navigator.geolocation,
+          controller.signal,
+        ),
+        m = map.current;
+      if (
+        controller.signal.aborted ||
+        locationRequest.current !== controller ||
+        !m
+      )
+        return;
+      const { latitude, longitude, accuracy } = position.coords;
+      if (Math.abs(latitude) > 85.05112878) {
+        setLocationStatus(
+          "Sua posição está na região polar, fora da área exibida nesta cartografia.",
+        );
+        return;
+      }
+      const at: Coordinate = [longitude, latitude];
+      locationMarker.current?.remove();
+      locationMarker.current = new ml.Marker({ color: "#2563eb" })
+        .setLngLat(at)
+        .setPopup(
+          new ml.Popup({ offset: 25 }).setText(
+            `Sua localização · precisão aproximada de ${Math.ceil(accuracy)} m`,
+          ),
+        )
+        .addTo(m);
+      m.flyTo({ center: at, zoom: accuracy <= 100 ? 17 : 14 });
+      state.current.onCoordinate(at);
+      setLocationStatus(
+        `Localização encontrada. Precisão aproximada: ±${Math.ceil(accuracy)} m.`,
+      );
+    } catch (e) {
+      if (locationRequest.current === controller && !controller.signal.aborted)
+        setLocationStatus(
+          e instanceof Error
+            ? e.message
+            : "Não foi possível localizar o dispositivo.",
+        );
+    } finally {
+      if (locationRequest.current === controller) {
+        setLocating(false);
+        locationRequest.current = null;
+      }
+    }
+  }
   useEffect(() => {
     if (!host.current) return;
     ml.setWorkerUrl("/vendor/maplibre/maplibre-gl-worker.mjs");
@@ -47,12 +120,6 @@ export default function EditorMap(props: Props) {
     map.current = m;
     m.addControl(new ml.NavigationControl(), "bottom-right");
     m.addControl(new ml.ScaleControl({ unit: "metric" }), "bottom-left");
-    m.addControl(
-      new ml.GeolocateControl({
-        positionOptions: { enableHighAccuracy: true },
-      }),
-      "bottom-right",
-    );
     const observer = new ResizeObserver(() => m.resize());
     observer.observe(host.current);
     let rendered: unknown[] = [];
@@ -219,14 +286,17 @@ export default function EditorMap(props: Props) {
         type: "fill",
         source: "draft",
         filter: ["==", ["geometry-type"], "Polygon"],
-        paint: { "fill-color": "#f0a329", "fill-opacity": 0.18 },
+        paint: {
+          "fill-color": ["coalesce", ["get", "color"], "#f0a329"],
+          "fill-opacity": 0.18,
+        },
       });
       m.addLayer({
         id: "draft-line",
         type: "line",
         source: "draft",
         paint: {
-          "line-color": "#f0a329",
+          "line-color": ["coalesce", ["get", "color"], "#f0a329"],
           "line-width": 4,
           "line-dasharray": [2, 1],
         },
@@ -236,7 +306,10 @@ export default function EditorMap(props: Props) {
         type: "circle",
         source: "draft",
         filter: ["==", ["geometry-type"], "Point"],
-        paint: { "circle-color": "#f0a329", "circle-radius": 8 },
+        paint: {
+          "circle-color": ["coalesce", ["get", "color"], "#f0a329"],
+          "circle-radius": 8,
+        },
       });
       m.addLayer({
         id: "vertex",
@@ -261,6 +334,7 @@ export default function EditorMap(props: Props) {
         s.draft,
         s.drawing,
         s.mode,
+        s.draftColor,
       ];
       if (
         drag.current ||
@@ -274,7 +348,11 @@ export default function EditorMap(props: Props) {
         geometry: a.geometry,
         properties: {
           id: a.id,
-          color: s.highlighted.includes(a.id) ? "#ffbb33" : a.color,
+          color: s.highlighted.includes(a.id)
+            ? "#ffbb33"
+            : a.id === s.selectedId
+              ? s.draftColor
+              : a.color,
           selected: a.id === s.selectedId,
           kind: a.kind,
           label: a.geometry.type.includes("Point")
@@ -306,7 +384,13 @@ export default function EditorMap(props: Props) {
             ? { type: "Point" as const, coordinates: s.drawing[0] }
             : null);
       (m.getSource("draft") as ml.GeoJSONSource | undefined)?.setData(
-        geom ? { type: "Feature", properties: {}, geometry: geom } : empty,
+        geom
+          ? {
+              type: "Feature",
+              properties: { color: s.draftColor },
+              geometry: geom,
+            }
+          : empty,
       );
       (m.getSource("vertices") as ml.GeoJSONSource | undefined)?.setData(
         s.draft && s.mode === "edit"
@@ -342,7 +426,7 @@ export default function EditorMap(props: Props) {
         );
         (m.getSource("draft") as ml.GeoJSONSource)?.setData({
           type: "Feature",
-          properties: {},
+          properties: { color: state.current.draftColor },
           geometry: drag.current.geometry,
         });
         (m.getSource("vertices") as ml.GeoJSONSource)?.setData({
@@ -410,7 +494,7 @@ export default function EditorMap(props: Props) {
       );
       (m.getSource("draft") as ml.GeoJSONSource)?.setData({
         type: "Feature",
-        properties: {},
+        properties: { color: state.current.draftColor },
         geometry: drag.current.geometry,
       });
       (m.getSource("vertices") as ml.GeoJSONSource)?.setData({
@@ -450,6 +534,10 @@ export default function EditorMap(props: Props) {
     });
     m.on("render", render);
     return () => {
+      locationRequest.current?.abort();
+      locationRequest.current = null;
+      locationMarker.current?.remove();
+      locationMarker.current = null;
       window.removeEventListener("mouseup", finishDrag);
       window.removeEventListener("touchcancel", finishDrag);
       observer.disconnect();
@@ -477,6 +565,7 @@ export default function EditorMap(props: Props) {
     props.drawing,
     props.selectedId,
     props.highlighted,
+    props.draftColor,
   ]);
   useEffect(() => {
     if (!props.focus || !map.current) return;
@@ -489,6 +578,42 @@ export default function EditorMap(props: Props) {
   return (
     <div className="editor-map">
       <div ref={host} className="editor-canvas" />
+      <div className="editor-location-control">
+        <button
+          type="button"
+          aria-label="Minha localização"
+          disabled={locating}
+          onClick={() => void findLocation()}
+        >
+          <LocateFixed size={18} />
+          {locating ? "Localizando…" : "Minha localização"}
+        </button>
+        {locating && (
+          <button
+            type="button"
+            aria-label="Cancelar localização"
+            onClick={() => {
+              locationRequest.current?.abort();
+              locationRequest.current = null;
+              setLocating(false);
+              setLocationStatus("Busca de localização cancelada.");
+            }}
+          >
+            <X size={16} />
+          </button>
+        )}
+      </div>
+      {locationStatus && (
+        <div className="editor-location-status" role="status">
+          <span>{locationStatus}</span>
+          <button
+            aria-label="Fechar aviso de localização"
+            onClick={() => setLocationStatus("")}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
       {error && (
         <div className="editor-map-error" role="status">
           {error}

@@ -583,6 +583,7 @@ export default function OpticalEditor() {
     });
   }
   function field<K extends keyof Form>(key: K, value: Form[K]) {
+    if (key === "color") setTrace([]);
     setFormDirty(true);
     setForm((f) => ({ ...f, [key]: value }));
   }
@@ -755,6 +756,7 @@ export default function OpticalEditor() {
           styleUrl={style}
           focus={focus}
           highlighted={highlighted}
+          draftColor={form.color}
           onSelect={select}
           onFinish={finish}
           onGeometry={geometry}
@@ -1022,7 +1024,11 @@ export default function OpticalEditor() {
             )}
             <label className="editor-style">
               Cartografia
-              <select value={style} onChange={(e) => setStyle(e.target.value)}>
+              <select
+                aria-label="Cartografia"
+                value={style}
+                onChange={(e) => setStyle(e.target.value)}
+              >
                 <option
                   value={
                     process.env.NEXT_PUBLIC_MAP_STYLE_URL ||
@@ -1037,12 +1043,24 @@ export default function OpticalEditor() {
                 <option value="https://tiles.openfreemap.org/styles/dark">
                   Escuro
                 </option>
-                {process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL && (
-                  <option value={process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL}>
-                    Satélite configurado
-                  </option>
-                )}
+                <option
+                  value={
+                    process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL ||
+                    "/maps/satellite.json"
+                  }
+                >
+                  Satélite
+                  {process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL
+                    ? ""
+                    : " · EOX 2016"}
+                </option>
               </select>
+              {style === "/maps/satellite.json" && (
+                <small>
+                  Imagens de 2016 · cerca de 10 m de resolução. Não mostram
+                  mudanças recentes nem detalhes de postes.
+                </small>
+              )}
             </label>
           </aside>
         )}
@@ -1249,7 +1267,9 @@ export default function OpticalEditor() {
                       />
                     </label>
                     <label>
-                      Cor
+                      {cables.includes(form.kind)
+                        ? "Cor deste cabo"
+                        : "Cor no mapa"}
                       <input
                         type="color"
                         value={form.color}
@@ -1257,6 +1277,39 @@ export default function OpticalEditor() {
                       />
                     </label>
                   </div>
+                  {cables.includes(form.kind) && (
+                    <div className="editor-cable-palette">
+                      <div>
+                        {[
+                          "#18a99b",
+                          "#ef4444",
+                          "#2563eb",
+                          "#16a34a",
+                          "#f59e0b",
+                          "#9333ea",
+                          "#ec4899",
+                          "#1e293b",
+                        ].map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            aria-label={`Usar cor ${color}`}
+                            aria-pressed={form.color.toLowerCase() === color}
+                            title={color}
+                            style={{ backgroundColor: color }}
+                            onClick={() => {
+                              field("color", color);
+                              setTrace([]);
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <small>
+                        {form.color.toUpperCase()} · Prévia no mapa. Clique em
+                        Salvar elemento para gravar somente este cabo.
+                      </small>
+                    </div>
+                  )}
                   <label>
                     Tipo
                     <select

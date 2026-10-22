@@ -1,0 +1,25 @@
+{
+  "version": 8,
+  "name": "Satélite · EOX 2016",
+  "glyphs": "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+  "sources": {
+    "satellite": {
+      "type": "raster",
+      "tiles": [
+        "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg"
+      ],
+      "tileSize": 256,
+      "minzoom": 0,
+      "maxzoom": 14,
+      "attribution": "<a href=\"https://cloudless.eox.at\" target=\"_blank\">EOxCloudless</a> by <a href=\"https://eox.at\" target=\"_blank\">EOX IT Services GmbH</a> (Contains modified Copernicus Sentinel data 2016) · <a href=\"https://creativecommons.org/licenses/by/4.0/\" target=\"_blank\">CC BY 4.0</a> · <a href=\"https://maps.eox.at\" target=\"_blank\">EOX::Maps</a>"
+    }
+  },
+  "layers": [
+    {
+      "id": "satellite",
+      "type": "raster",
+      "source": "satellite",
+      "paint": { "raster-fade-duration": 200 }
+    }
+  ]
+}
