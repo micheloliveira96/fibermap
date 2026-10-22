@@ -193,6 +193,16 @@ export default function OpticalEditor() {
     setReady(true);
     if (!initializedFocus.current && data.length) {
       initializedFocus.current = true;
+      if (
+        (data as EditorAsset[]).some((a) =>
+          vertices(a.geometry).some(
+            (v) => Math.abs(v.coordinate[1]) > 85.05112878,
+          ),
+        )
+      )
+        setNotice(
+          "Há coordenadas próximas aos polos, fora da área desta cartografia. Confira latitude e longitude em Propriedades ou pesquise sua cidade.",
+        );
       setFocus({
         type: "MultiPoint",
         coordinates: (data as EditorAsset[]).flatMap((a) =>
@@ -311,8 +321,12 @@ export default function OpticalEditor() {
     }));
   }
   function geometry(g: MapGeometry) {
-    if (draft && JSON.stringify(g) !== JSON.stringify(draft))
-      setHistory((h) => ({ past: [...h.past.slice(-49), draft], future: [] }));
+    const previous = draft ?? selected?.geometry;
+    if (previous && JSON.stringify(g) !== JSON.stringify(previous))
+      setHistory((h) => ({
+        past: [...h.past.slice(-49), previous],
+        future: [],
+      }));
     setDraft(g);
   }
   function finish() {
@@ -380,8 +394,8 @@ export default function OpticalEditor() {
       }
     }
   }
-  async function save() {
-    const g = draft ?? selected?.geometry;
+  async function save(override?: MapGeometry) {
+    const g = override ?? draft ?? selected?.geometry;
     if (!g) return;
     await run(async () => {
       const body = {
@@ -1158,10 +1172,63 @@ export default function OpticalEditor() {
                 className="editor-form"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void save();
+                  if (current?.type === "Point") {
+                    const values = new FormData(e.currentTarget);
+                    void save({
+                      type: "Point",
+                      coordinates: [
+                        Number(values.get("longitude")),
+                        Number(values.get("latitude")),
+                      ],
+                    });
+                  } else void save();
                 }}
               >
                 <fieldset disabled={!writable || busy}>
+                  {current?.type === "Point" && (
+                    <>
+                      <div className="editor-two">
+                        {(["latitude", "longitude"] as const).map((name, i) => {
+                          const index = i === 0 ? 1 : 0;
+                          return (
+                            <label key={name + current.coordinates[index]}>
+                              {i === 0 ? "Latitude" : "Longitude"}
+                              <input
+                                name={name}
+                                type="number"
+                                step="any"
+                                min={i === 0 ? -90 : -180}
+                                max={i === 0 ? 90 : 180}
+                                required
+                                defaultValue={current.coordinates[index]}
+                                onChange={() => setFormDirty(true)}
+                                onBlur={(e) => {
+                                  const value = e.currentTarget.valueAsNumber;
+                                  if (
+                                    Number.isFinite(value) &&
+                                    Math.abs(value) <= (i === 0 ? 90 : 180)
+                                  ) {
+                                    const coordinates = [
+                                      ...current.coordinates,
+                                    ] as Coordinate;
+                                    coordinates[index] = value;
+                                    geometry({ type: "Point", coordinates });
+                                    setMode("edit");
+                                  }
+                                }}
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {Math.abs(current.coordinates[1]) > 85.05112878 && (
+                        <p>
+                          Coordenada válida em WGS 84, além da região exibida
+                          por este mapa. Confirme a localização antes de salvar.
+                        </p>
+                      )}
+                    </>
+                  )}
                   <label>
                     Nome
                     <input

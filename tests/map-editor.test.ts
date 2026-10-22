@@ -3,7 +3,12 @@ import { DOMParser } from "@xmldom/xmldom";
 import JSZip from "jszip";
 import { readKml, writeKml } from "../src/lib/kml";
 import { geometrySchema, geographicLength, splitRoute } from "../src/lib/geo";
-import { vertices, moveVertex, insertVertex } from "../src/lib/vertices";
+import {
+  vertices,
+  moveVertex,
+  insertVertex,
+  cameraCoordinates,
+} from "../src/lib/vertices";
 const parse = (xml: string) => new DOMParser().parseFromString(xml, "text/xml");
 const encode = (xml: string) => new TextEncoder().encode(xml);
 const source = `<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Style id="red"><LineStyle><color>ff0000ff</color></LineStyle></Style><Folder><name>Setor A</name><Placemark><name>CTO &amp; teste</name><description>&lt;b&gt;Descrição&lt;/b&gt;</description><Point><coordinates>-46.63,-23.55,10</coordinates></Point></Placemark><Placemark><name>Rota</name><styleUrl>#red</styleUrl><LineString><coordinates>-46.63,-23.55 -46.64,-23.56 -46.65,-23.55</coordinates></LineString></Placemark><Placemark><name>Área</name><Polygon><outerBoundaryIs><LinearRing><coordinates>0,0 1,0 1,1 0,0</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark><Placemark><name>Múltiplos</name><MultiGeometry><Point><coordinates>1,2</coordinates></Point><Point><coordinates>3,4</coordinates></Point></MultiGeometry></Placemark></Folder></Document></kml>`;
@@ -74,6 +79,19 @@ describe("Importação e exportação geográfica", () => {
   });
 });
 describe("Edição de geometria", () => {
+  it("preserva coordenadas polares sem enquadrar a câmera fora da projeção", () => {
+    const polar = geometrySchema.parse({
+      type: "Point",
+      coordinates: [80, 89],
+    });
+    expect(cameraCoordinates(polar)).toEqual([]);
+    expect(polar.coordinates).toEqual([80, 89]);
+    const city = geometrySchema.parse({
+      type: "Point",
+      coordinates: [-46.63, -23.55],
+    });
+    expect(cameraCoordinates(city)).toEqual([[-46.63, -23.55]]);
+  });
   it("divide mantendo soma dos comprimentos", () => {
     const g = geometrySchema.parse({
       type: "LineString",

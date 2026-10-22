@@ -4,6 +4,13 @@ export type Vertex = {
   coordinate: Coordinate;
   closing: boolean;
 };
+// Web Mercator cannot display the polar caps. Keep the original WGS84 geometry
+// intact and avoid moving the camera beyond the projection's latitude limit.
+export function cameraCoordinates(g: MapGeometry) {
+  return vertices(g)
+    .map((v) => v.coordinate)
+    .filter((c) => Math.abs(c[1]) <= 85.05112878);
+}
 export function vertices(g: MapGeometry): Vertex[] {
   const out: Vertex[] = [];
   function visit(c: unknown, path: number[]) {

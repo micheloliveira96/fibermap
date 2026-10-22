@@ -4,7 +4,7 @@ import * as ml from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { EditorAsset } from "@/lib/editor-types";
 import type { Coordinate, MapGeometry } from "@/lib/geo";
-import { vertices, moveVertex } from "@/lib/vertices";
+import { vertices, moveVertex, cameraCoordinates } from "@/lib/vertices";
 import { kinds } from "@/lib/types";
 type Props = {
   assets: EditorAsset[];
@@ -98,7 +98,13 @@ export default function EditorMap(props: Props) {
           c.lineTo(25, 10);
           c.moveTo(10, 6);
           c.lineTo(22, 6);
-        } else if (kind === "OLT" || kind === "DIO") {
+        } else if (kind === "DIO") {
+          c.rect(5, 9, 22, 14);
+          for (const x of [10, 16, 22]) {
+            c.moveTo(x, 13);
+            c.lineTo(x, 19);
+          }
+        } else if (kind === "OLT") {
           c.rect(7, 6, 18, 20);
           for (const y of [11, 16, 21]) {
             c.moveTo(11, y);
@@ -474,7 +480,7 @@ export default function EditorMap(props: Props) {
   ]);
   useEffect(() => {
     if (!props.focus || !map.current) return;
-    const coords = vertices(props.focus).map((v) => v.coordinate);
+    const coords = cameraCoordinates(props.focus);
     if (!coords.length) return;
     const bounds = new ml.LngLatBounds(coords[0], coords[0]);
     coords.forEach((c) => bounds.extend(c));

@@ -8,7 +8,7 @@ Entrega de 22/10/2026 sobre a fundação Next.js 16, Better Auth, Prisma e Postg
 - Correção da integração MapLibre 6: worker e módulo compartilhado são copiados na compilação e servidos no próprio domínio. Corrigida também a altura do canvas. O teste visual confirmou ruas e bairros reais.
 - Projetos persistentes e camadas com nome, cor e visibilidade. Filtros independentes por tipo de infraestrutura. Cores de identificação de fibras configuráveis por projeto e na criação de cada cabo.
 - Desenho de cabos por vértices, escolha antecipada de tipo e capacidade, conclusão por botão ou duplo clique, distância Turf, propriedades e gravação PostGIS. Pontos e polígonos de cobertura também são suportados.
-- Edição de vértices por arraste com mouse ou toque; inserção e remoção do vértice selecionado; desfazer/refazer de geometrias ainda não salvas. Pontos podem ser movidos com a mesma ferramenta. Renomeação e propriedades possuem gravação real.
+- Edição de vértices por arraste com mouse ou toque; inserção e remoção do vértice selecionado; desfazer/refazer de geometrias ainda não salvas. Pontos podem ser movidos com a mesma ferramenta ou pelas coordenadas no painel. Renomeação e propriedades possuem gravação real.
 - Fibras individuais e terminais A/B, fabricante, origem/destino documental, comprimento geográfico, físico e reserva separados, situação, cor, observações e data. Capacidades personalizadas até 2.880 fibras.
 - POP, OLT, DIO, CTO, caixa, splitter, cliente, poste, duto, reserva e pontos de passagem. Símbolos por tipo. OLT/DIO/splitter podem pertencer a POP/CTO/caixa com vínculo persistente.
 - Splitters com entradas e saídas reais; CTO/DIO com continuidade entre frente e traseira. Conexões entre terminais, fusões, passantes e patch cords persistentes; caixa/CTO/POP e bandeja podem ser associados à conexão. Exclusividade por terminal e bloqueio de fibra reservada/danificada/indisponível.
@@ -25,7 +25,7 @@ Entrega de 22/10/2026 sobre a fundação Next.js 16, Better Auth, Prisma e Postg
 | Cenário | Evidência |
 | --- | --- |
 | Tipos e compilação | `npm run typecheck` sem incremental e build de produção aprovados |
-| Domínio e importação | 16 testes unitários aprovados, incluindo geometrias, KML/KMZ, exportação de ida/volta, entidades, ZIP com caminho suspeito e expansão excessiva |
+| Domínio e importação | 17 testes unitários aprovados, incluindo geometrias, enquadramento sem alteração de coordenadas polares, KML/KMZ, exportação de ida/volta, entidades, ZIP com caminho suspeito e expansão excessiva |
 | HTTP com banco real | `tests/editor-http.ts`: projetos/camadas, padrão por projeto, 24 fibras, CTO e splitter de 8 saídas, conexão, segmentação preservando IDs, edição, conflito 409, estados, cópia, exclusão, KML/KMZ e conversão |
 | Integridade e acesso | Geometria inválida rejeitada; projeto de outra organização não aceito; seleção de organização sem associação retorna 403; visualizador não altera dados |
 | Concorrência e caixa | Duas edições simultâneas da mesma versão produziram 200/409; fusão da fibra 3/B de um cabo à 7/A de outro vinculada a uma caixa/bandeja e relida; mudança de cor da camada persistida |
@@ -53,6 +53,7 @@ Para repetir os testes HTTP, inicie o servidor local e defina `TEST_API_URL` par
 - O rastreador soma perdas documentadas de conexões e splitters. Não representa potência medida, orçamento por comprimento/onda, OTDR ou telemetria.
 - Busca pública Photon possui cache/limitação por instância e não oferece SLA. O operador pode configurar outro endpoint compatível. Satélite requer provedor licenciado configurado; nenhum serviço pago foi contratado.
 - GPS exige permissão humana; toque e localização devem ser homologados nos aparelhos usados em campo. A homologação automática cobre mouse, API, persistência e viewport móvel.
+- A cartografia Web Mercator não exibe as calotas polares, além de aproximadamente ±85,05° de latitude. Coordenadas WGS 84 nesses locais continuam armazenadas, com aviso e edição numérica; não deslocam automaticamente a câmera para uma área que o mapa não consegue representar.
 - O backup é exportado em formato próprio; restauração automática e estratégia de retenção ainda não possuem interface.
 - Isolamento de organizações é verificado em todas as APIs. O banco aceita somente a credencial de servidor com políticas RLS próprias; as sessões Better Auth não são JWTs do Supabase e não concedem acesso direto pelo Data API. O aviso informativo de RLS sem política em `_prisma_migrations` é intencional: o runtime não acessa o histórico de migrações.
 - Integração automática GitHub → Vercel permanece pendente de configuração na conta. Esta entrega usa publicação direta do código no projeto Vercel existente.
