@@ -1,6 +1,11 @@
+import {
+  projectAccess as access,
+  assetScope,
+  terminalScope,
+} from "@/lib/project-access";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
+import { ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import {
   coordinateSchema,
   geometrySchema,
@@ -19,10 +24,10 @@ export async function POST(r: Request, c: { params: Promise<{ id: string }> }) {
           confirmConnections: z.boolean().default(false),
         })
         .parse(await r.json());
-    requirePermission(m,"cable.edit");
+    requirePermission(m, "cable.edit");
     const result = await db.$transaction(async (tx) => {
       const a = await tx.asset.findFirst({
-        where: { id, organizationId: m.organizationId, version: d.version },
+        where: { id, ...assetScope(m), version: d.version },
         include: { segments: { orderBy: { position: "asc" } } },
       });
       if (!a) throw new ApiError(409, "Elemento alterado. Recarregue.");
@@ -60,7 +65,7 @@ export async function POST(r: Request, c: { params: Promise<{ id: string }> }) {
         );
       }
       const locked = await tx.asset.updateMany({
-        where: { id, organizationId: m.organizationId, version: d.version },
+        where: { id, ...assetScope(m), version: d.version },
         data: { version: { increment: 1 } },
       });
       if (!locked.count)
@@ -81,13 +86,18 @@ export async function POST(r: Request, c: { params: Promise<{ id: string }> }) {
         data: {
           organizationId: m.organizationId,
           actorId: m.actorId,
+          projectId: m.projectId,
           action: "SPLIT_ROUTE",
           entityId: id,
           detail: { at: d.at, preserveOpticalIdentity: true },
         },
       });
       return tx.cableSegment.findMany({
-        where: { assetId: id, organizationId: m.organizationId },
+        where: {
+          assetId: id,
+          organizationId: m.organizationId,
+          asset: { projectId: m.projectId },
+        },
         orderBy: { position: "asc" },
       });
     });

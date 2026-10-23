@@ -802,3 +802,68 @@
 .od-batch-error {
   color: #ef7680 !important;
 }
+.od-workspace .od-adapter-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  position: relative;
+  padding: 7px 10px 6px;
+  background: var(--od-bg);
+  border-block: 1px solid var(--od-border);
+  font-size: 10px;
+}
+.od-adapter-heading small {
+  margin-left: auto;
+  color: var(--od-muted);
+  font-size: 8px;
+}
+.od-adapter-heading span {
+  flex-basis: 100%;
+  width: 100%;
+  color: var(--od-muted);
+  font-size: 8px;
+}
+.od-port:has(.od-adapter-heading) {
+  height: auto;
+}
+.od-port:has(.od-adapter-heading) > button {
+  height: 30px;
+}
+.od-port:has(.od-adapter-heading) > .react-flow__handle {
+  top: auto;
+  bottom: 14px;
+}
+.od-component-properties {
+  border-bottom: 1px solid var(--od-border);
+  padding-bottom: 15px;
+  margin-bottom: 15px;
+}
+.od-component-properties button {
+  margin: 0 6px 6px 0;
+}
+.od-adapter-properties {
+  border-bottom: 1px solid var(--od-border);
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+.od-adapter-properties small {
+  display: block;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+.od-adapter-properties button {
+  margin-bottom: 10px;
+}
+.od-node .od-port b {
+  font-size: 9px;
+  white-space: normal;
+}
+.od-recovery {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: #225044;
+  padding: 8px 18px;
+  color: #e5f9ef;
+  font-size: 11px;
+}

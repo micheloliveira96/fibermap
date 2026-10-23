@@ -1,6 +1,7 @@
+import { projectAccess as access, assetScope, terminalScope } from "@/lib/project-access";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
+import { ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { validatePlacement } from "@/lib/inventory";
 import { assetPermission } from "@/lib/permissions";
 const input = z.object({
@@ -23,9 +24,9 @@ const input = z.object({
 export async function GET() {
   try {
     const m = await access(); requirePermission(m,"map.view");
-    const where = { organizationId: m.organizationId };
+    const where = assetScope(m);
     const [projects, layers, imports, audits, connections] = await Promise.all([
-      db.networkProject.findMany({ where, orderBy: { name: "asc" } }),
+      db.networkProject.findMany({ where: { id: m.projectId, organizationId: m.organizationId }, orderBy: { name: "asc" } }),
       db.mapLayer.findMany({ where, orderBy: { name: "asc" } }),
       db.importBatch.findMany({
         where,
@@ -51,14 +52,19 @@ export async function POST(r: Request) {
     sameOrigin(r);
     const m = await access(true),
       d = input.parse(await r.json());
+    if (d.projectId && d.projectId !== m.projectId) throw new ApiError(400,"Camada de outro projeto.");
+    d.projectId = m.projectId;
+    if (d.type === "project" && d.id && d.id !== m.projectId) throw new ApiError(404,"Projeto não encontrado.");
+    if (d.type === "project" && d.id && d.name !== m.project.name) requirePermission(m,"projects.rename");
     requirePermission(m,d.type==="project" ? d.id?"projects.edit":"projects.create" : "layers.edit");
     const result = await db.$transaction(async (tx) => {
       await validatePlacement(tx, m.organizationId, { projectId: d.projectId });
       if (d.type === "project") {
         if (d.id) {
           const changed = await tx.networkProject.updateMany({
-            where: { id: d.id, organizationId: m.organizationId },
+            where: { id: d.id, organizationId: m.organizationId, version: d.version ?? m.project.version },
             data: {
+              version: { increment: 1 },
               name: d.name,
               ...(d.colorPattern ? { colorPattern: d.colorPattern } : {}),
             },
@@ -77,12 +83,12 @@ export async function POST(r: Request) {
       }
       if (d.id) {
         const before = await tx.mapLayer.findFirst({
-          where: { id: d.id, organizationId: m.organizationId },
+          where: { id: d.id, ...assetScope(m) },
         });
         const changed = await tx.mapLayer.updateMany({
           where: {
             id: d.id,
-            organizationId: m.organizationId,
+            ...assetScope(m),
             version: d.version ?? -1,
           },
           data: {
@@ -110,6 +116,7 @@ export async function POST(r: Request) {
           data: {
             organizationId: m.organizationId,
             actorId: m.actorId,
+            projectId: m.projectId,
             action: "UPDATE_LAYER",
             entityId: d.id,
             detail: {

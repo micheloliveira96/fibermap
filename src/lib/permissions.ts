@@ -20,7 +20,17 @@ export const permissionGroups = {
     "network.export",
     "layers.edit",
   ],
-  Projetos: ["projects.view", "projects.create", "projects.edit"],
+  Projetos: [
+    "projects.view",
+    "projects.create",
+    "projects.edit",
+    "projects.rename",
+    "projects.duplicate",
+    "projects.archive",
+    "projects.delete",
+    "projects.export",
+    "projects.access",
+  ],
   Administração: [
     "users.view",
     "users.create",
@@ -57,6 +67,12 @@ export const permissionLabels: Record<string, string> = {
   "projects.view": "Consultar projetos",
   "projects.create": "Criar projetos",
   "projects.edit": "Editar projetos",
+  "projects.rename": "Renomear projetos",
+  "projects.duplicate": "Duplicar projetos",
+  "projects.archive": "Arquivar e restaurar projetos",
+  "projects.delete": "Mover projetos para a lixeira",
+  "projects.export": "Exportar projetos",
+  "projects.access": "Gerenciar acesso aos projetos",
   "users.view": "Consultar usuários",
   "users.create": "Criar subordinados",
   "users.edit": "Editar subordinados",
@@ -132,5 +148,5 @@ export function assetPermission(
   kind: string,
   action: "create" | "edit" | "delete",
 ) {
-  return `${["BACKBONE", "DISTRIBUTION", "DERIVATION", "DROP", "DUCT"].includes(kind) ? "cable" : kind === "CTO" ? "cto" : kind === "CLOSURE" ? "closure" : "equipment"}.${action}`;
+  return `${["BACKBONE", "DISTRIBUTION", "DERIVATION", "DROP", "PATCHCORD", "DUCT"].includes(kind) ? "cable" : kind === "CTO" ? "cto" : kind === "CLOSURE" ? "closure" : "equipment"}.${action}`;
 }

@@ -25,7 +25,7 @@ export async function GET() {
           platform: false,
           role: m.role,
           permissions: m.permissions,
-          destination: m.role === "OWNER" ? "/empresa/administracao" : "/",
+          destination: "/projetos",
           organization: m.organization.name,
           expired: m.expired,
         },

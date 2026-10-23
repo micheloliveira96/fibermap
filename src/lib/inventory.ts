@@ -5,6 +5,7 @@ import { ApiError } from "./access";
 import { strands, colors } from "./network";
 import { compatible, geographicLength, type MapGeometry } from "./geo";
 export const inventoryInclude = {
+  internalLinks: true,
   segments: { orderBy: { position: "asc" as const } },
   fibers: {
     orderBy: { number: "asc" as const },
@@ -28,8 +29,14 @@ export async function validatePlacement(
     });
     if (
       !parent ||
-      !["CTO", "CLOSURE", "POP", ...(data.kind === "SPLITTER" ? ["DIO"] : [])].includes(parent.kind) ||
-      !["SPLITTER", "OLT", "DIO"].includes(data.kind ?? "")
+      ![
+        "CTO",
+        "CLOSURE",
+        "POP",
+        ...(["SPLITTER", "PATCHCORD"].includes(data.kind ?? "") ? ["DIO"] : []),
+      ].includes(parent.kind) ||
+      !["SPLITTER", "OLT", "DIO", "PATCHCORD"].includes(data.kind ?? "") ||
+      parent.projectId !== data.projectId
     )
       throw new ApiError(
         400,
@@ -71,7 +78,12 @@ export async function createAsset(
   tx: Prisma.TransactionClient,
   member: { organizationId: string; actorId: string },
   data: AssetInput,
-  extra: { id?: string; importBatchId?: string; metadata?: Prisma.InputJsonObject } = {},
+  extra: {
+    id?: string;
+    importBatchId?: string;
+    metadata?: Prisma.InputJsonObject;
+    skipTerminals?: boolean;
+  } = {},
 ) {
   if (!compatible(data.kind, data.geometry))
     throw new ApiError(400, "Tipo incompatível com a geometria.");
@@ -98,17 +110,20 @@ export async function createAsset(
       id: extra.id,
       installedAt: fields.installedAt ? new Date(fields.installedAt) : null,
       organizationId: member.organizationId,
+      projectId: data.projectId,
       importBatchId: extra.importBatchId,
       geographicLengthM: geographicLength(data.geometry),
       metadata: { ...extra.metadata, insertionLossDb, colorPattern: pattern },
     },
   });
   await spatial(tx, asset.id, data.geometry);
-  await populateTerminals(tx, member.organizationId, asset.id, data, pattern);
+  if (!extra.skipTerminals)
+    await populateTerminals(tx, member.organizationId, asset.id, data, pattern);
   await tx.auditLog.create({
     data: {
       organizationId: member.organizationId,
       actorId: member.actorId,
+      projectId: data.projectId,
       action: "CREATE_ASSET",
       entityId: asset.id,
       detail: { ...data, importBatchId: extra.importBatchId ?? null },
@@ -125,7 +140,11 @@ export async function populateTerminals(
   pattern: string[] = colors,
 ) {
   const { fiberCount, ports, inputs } = data;
-  if (["BACKBONE", "DISTRIBUTION", "DERIVATION", "DROP"].includes(data.kind)) {
+  if (
+    ["BACKBONE", "DISTRIBUTION", "DERIVATION", "DROP", "PATCHCORD"].includes(
+      data.kind,
+    )
+  ) {
     const fibers = strands(fiberCount, pattern).map((s) => ({
       id: randomUUID(),
       assetId: assetId,

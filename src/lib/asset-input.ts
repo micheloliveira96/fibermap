@@ -11,6 +11,7 @@ export const assetSchema = z.object({
     "DISTRIBUTION",
     "DERIVATION",
     "DROP",
+    "PATCHCORD",
     "CLOSURE",
     "CTO",
     "SPLITTER",
@@ -25,7 +26,7 @@ export const assetSchema = z.object({
   status: z.enum(["PLANNED", "INSTALLED", "MAINTENANCE", "DISABLED"]),
   geometry: geometrySchema,
   fiberCount: z.number().int().min(1).max(2880).default(12),
-  ports: z.number().int().min(1).max(128).default(8),
+  ports: z.number().int().min(1).max(2880).default(8),
   inputs: z.number().int().min(1).max(2).default(1),
   insertionLossDb: z.number().min(0).max(40).default(10.5),
   color: z

@@ -25,6 +25,7 @@ function EndpointPicker({
     [cable, setCable] = useState(""),
     [tube, setTube] = useState(""),
     [side, setSide] = useState("IN"),
+    [endFace,setEndFace]=useState("A"),
     [role, setRole] = useState("SPLITTER_IN"),
     [from, setFrom] = useState(1),
     [to, setTo] = useState(12);
@@ -36,6 +37,7 @@ function EndpointPicker({
     mode === "fiber"
       ? p.asset.id === cableId &&
         Boolean(p.port.fiberId) &&
+        (!p.access?.bothEnds || p.port.kind===`FIBER_${endFace}`) &&
         (!tube ||
           p.asset.fibers.find((f) => f.id === p.port.fiberId)?.tube ===
             Number(tube)) &&
@@ -92,6 +94,7 @@ function EndpointPicker({
                 ))}
             </select>
           </label>
+          {visible.some(p=>p.access?.bothEnds)&&<label>Ponta do cabo<select value={endFace} onChange={e=>setEndFace(e.target.value)}><option value="A">A</option><option value="B">B</option></select></label>}
           <div className="od-batch-fields">
             <label>
               Tubo

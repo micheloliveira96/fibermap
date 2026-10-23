@@ -924,4 +924,72 @@
     padding: 5px;
   }
 }
-.editor-mapbox-logo { position: absolute; bottom: 40px; right: 12px; z-index: 4; display: block; width: 88px; height: 23px; }
+.editor-mapbox-logo {
+  position: absolute;
+  bottom: 40px;
+  right: 12px;
+  z-index: 4;
+  display: block;
+  width: 88px;
+  height: 23px;
+}
+.editor-active-project {
+  font-size: 11px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-active-project strong {
+  display: block;
+  font-size: 12px;
+}
+.editor-project-state {
+  font-size: 10px;
+  max-width: 160px;
+  color: var(--muted);
+}
+.editor-project-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #254737;
+  color: #e3f6ec;
+  font-size: 12px;
+}
+.editor-project-banner button {
+  border: 1px solid #5a8870;
+  background: transparent;
+  color: inherit;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+.editor-context-menu {
+  position: fixed;
+  z-index: 1300;
+  min-width: 175px;
+  border: 1px solid #466374;
+  border-radius: 8px;
+  padding: 6px;
+  background: #172b3a;
+  box-shadow: 0 10px 35px #0006;
+}
+.editor-context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  color: #eaf4f8;
+  border: 0;
+  border-radius: 5px;
+  padding: 9px 12px;
+  font-size: 12px;
+}
+.editor-context-menu button:hover {
+  background: #0b8c8625;
+}
+.editor-context-menu button:disabled {
+  opacity: 0.4;
+}

@@ -1,6 +1,7 @@
+import { projectAccess as access, assetScope, terminalScope } from "@/lib/project-access";
 import { assetPermission } from "@/lib/permissions";
 import { db } from "@/lib/db";
-import { access, failure, sameOrigin, requirePermission } from "@/lib/access";
+import { ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { assetSchema } from "@/lib/asset-input";
 import { createAsset, inventoryInclude } from "@/lib/inventory";
 export async function GET() {
@@ -8,7 +9,7 @@ export async function GET() {
     const m = await access(); requirePermission(m,"network.view"); const { organizationId } = m;
     return Response.json(
       await db.asset.findMany({
-        where: { organizationId },
+        where: { organizationId, projectId: m.projectId },
         include: inventoryInclude,
         orderBy: { createdAt: "desc" },
       }),
@@ -23,6 +24,8 @@ export async function POST(request: Request) {
     sameOrigin(request);
     const member = await access(true),
       data = assetSchema.parse(await request.json());
+    if (data.projectId && data.projectId !== member.projectId) throw new ApiError(400,"Projeto informado não corresponde ao contexto.");
+    data.projectId = member.projectId;
     requirePermission(member,assetPermission(data.kind,"create"));
     const asset = await db.$transaction((tx) => createAsset(tx, member, data), {
       timeout: 20000,

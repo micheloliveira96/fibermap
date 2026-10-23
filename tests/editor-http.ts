@@ -12,7 +12,7 @@ const org = randomUUID(),
   user = randomUUID(),
   email = `${user}@fibermap.invalid`,
   password = randomUUID() + randomUUID();
-let cookie = "";
+let cookie = "", activeProjectId = "";
 async function call(
   path: string,
   body?: unknown,
@@ -26,6 +26,7 @@ async function call(
       origin: base!,
       cookie,
       "x-organization-id": organization,
+      ...(activeProjectId?{"x-project-id":activeProjectId}:{}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -76,11 +77,11 @@ try {
     .getSetCookie()
     .map((c) => c.split(";")[0])
     .join("; ");
-  const project = await ok("/api/map", {
-    type: "project",
+  const project = await ok("/api/projects", {
     name: "Projeto QA",
     colorPattern: ["Vermelho", "Azul"],
-  });
+  },"POST",201);
+  activeProjectId=project.id;
   const layer = await ok("/api/map", {
     type: "layer",
     name: "Cabos QA",
@@ -413,7 +414,7 @@ try {
         projectId: foreign.id,
       })
     ).status,
-    404,
+    400,
   );
   assert.equal((await call("/api/map", undefined, "GET", other)).status, 403);
   const backup = await ok("/api/backup");
@@ -462,6 +463,7 @@ try {
       where: { organizationId: { in: [org, other] } },
     });
   });
+  await db.diagramComponent.deleteMany({where:{organizationId:{in:[org,other]}}});
   await db.internalLink.deleteMany({
     where: { organizationId: { in: [org, other] } },
   });
@@ -487,12 +489,9 @@ try {
   await db.mapLayer.deleteMany({
     where: { organizationId: { in: [org, other] } },
   });
-  await db.networkProject.deleteMany({
-    where: { organizationId: { in: [org, other] } },
-  });
-  await db.auditLog.deleteMany({
-    where: { organizationId: { in: [org, other] } },
-  });
+  await db.auditLog.deleteMany({where:{organizationId:{in:[org,other]}}});
+  await db.projectGrant.deleteMany({where:{organizationId:{in:[org,other]}}});
+  await db.networkProject.deleteMany({where:{organizationId:{in:[org,other]}}});
   await db.membership.deleteMany({
     where: { organizationId: { in: [org, other] } },
   });

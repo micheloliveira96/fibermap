@@ -1,10 +1,11 @@
+import { projectAccess as access, assetScope, terminalScope } from "@/lib/project-access";
 import { assetPermission } from "@/lib/permissions";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { createHash, randomUUID } from "node:crypto";
 import { DOMParser } from "@xmldom/xmldom";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
+import { ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { readKml, MAX_FILE } from "@/lib/kml";
 import { assetSchema } from "@/lib/asset-input";
 import { createAsset } from "@/lib/inventory";
@@ -36,7 +37,8 @@ export async function POST(r: Request) {
       })
       .parse(JSON.parse(raw));
     for(const item of d.selected) requirePermission(m,assetPermission(item.kind,"create"));
-    if(!d.projectId) requirePermission(m,"projects.create");
+    if (d.projectId && d.projectId !== m.projectId) throw new ApiError(400,"Importação pertence a outro projeto.");
+    d.projectId=m.projectId;
     const bytes = Buffer.from(d.source, "base64");
     if (bytes.length > MAX_FILE) throw new ApiError(413, "Limite de 1,5 MB.");
     if (new Set(d.selected.map((s) => s.id)).size !== d.selected.length)
@@ -68,13 +70,13 @@ export async function POST(r: Request) {
     if (
       await db.importBatch.findUnique({
         where: {
-          organizationId_digest: { organizationId: m.organizationId, digest },
+          organizationId_projectId_digest: { organizationId: m.organizationId, projectId: m.projectId, digest },
         },
       })
     )
       throw new ApiError(
         409,
-        "Este arquivo já foi importado nesta organização.",
+        "Este arquivo já foi importado neste projeto.",
       );
     const out = await db.$transaction(
       async (tx) => {

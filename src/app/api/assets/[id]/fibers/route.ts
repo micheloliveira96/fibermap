@@ -1,6 +1,11 @@
+import {
+  projectAccess as access,
+  assetScope,
+  terminalScope,
+} from "@/lib/project-access";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
+import { ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 export async function PATCH(
   r: Request,
   c: { params: Promise<{ id: string }> },
@@ -16,10 +21,10 @@ export async function PATCH(
           version: z.number().int(),
         })
         .parse(await r.json());
-    requirePermission(m,"connections.edit");
+    requirePermission(m, "connections.edit");
     await db.$transaction(async (tx) => {
       const a = await tx.asset.updateMany({
-        where: { id, organizationId: m.organizationId, version: d.version },
+        where: { id, ...assetScope(m), version: d.version },
         data: { version: { increment: 1 } },
       });
       if (!a.count) throw new ApiError(409, "Elemento alterado. Recarregue.");
@@ -41,6 +46,7 @@ export async function PATCH(
         data: {
           organizationId: m.organizationId,
           actorId: m.actorId,
+          projectId: m.projectId,
           action: "FIBER_STATUS",
           entityId: id,
           detail: { fiberId: f.id, before: f.status, after: d.status },

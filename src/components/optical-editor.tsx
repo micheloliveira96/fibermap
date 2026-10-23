@@ -1,6 +1,17 @@
 "use client";
+import { useRouter } from "next/navigation";
+import { useActiveProject, useProjectRequest } from "./project-context";
+import { RenameDialog, type RenameTarget } from "./rename-dialog";
+import { assetPermission } from "@/lib/permissions";
 import { HelpLink } from "./help-link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import dynamic from "next/dynamic";
 import {
   Network,
@@ -46,7 +57,9 @@ const Map = dynamic(() => import("./editor-map"), {
   ssr: false,
   loading: () => <div className="editor-loading">Carregando cartografia…</div>,
 });
-const OpticalDiagram = dynamic(() => import("./optical-diagram"), { ssr: false });
+const OpticalDiagram = dynamic(() => import("./optical-diagram"), {
+  ssr: false,
+});
 const initial: MapData = {
   role: "VIEWER",
   projects: [],
@@ -101,21 +114,6 @@ const defaultForm = (): Form => ({
   colorPattern:
     "Azul,Laranja,Verde,Marrom,Cinza,Branco,Vermelho,Preto,Amarelo,Violeta,Rosa,Aqua",
 });
-async function request(
-  url: string,
-  body?: unknown,
-  method = body ? "POST" : "GET",
-) {
-  const r = await fetch(url, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await r.json();
-  if (!r.ok)
-    throw new Error(data.error ?? "Não foi possível concluir a operação.");
-  return data;
-}
 function download(
   data: Blob | BlobPart,
   name: string,
@@ -131,10 +129,20 @@ function download(
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export default function OpticalEditor() {
+  const router = useRouter();
+  const activeProject = useActiveProject(),
+    request = useProjectRequest();
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null),
+    [contextMenu, setContextMenu] = useState<{
+      asset: EditorAsset;
+      x: number;
+      y: number;
+    } | null>(null);
   const [diagramId, setDiagramId] = useState<string | null>(null);
+  const [assetSaveBlocked, setAssetSaveBlocked] = useState(false);
   const [assets, setAssets] = useState<EditorAsset[]>([]),
     [meta, setMeta] = useState(initial),
-    [project, setProject] = useState(""),
+    [project] = useState(activeProject.id),
     [mode, setMode] = useState("select"),
     [selected, setSelected] = useState<EditorAsset | null>(null),
     [draft, setDraft] = useState<MapGeometry | null>(null),
@@ -144,7 +152,7 @@ export default function OpticalEditor() {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [ready, setReady] = useState(false),
-    [dark, setDark] = useState(false),
+    [dark, setDark] = useState(Boolean(activeProject.view.dark)),
     [left, setLeft] = useState(true),
     [right, setRight] = useState(false),
     [query, setQuery] = useState(""),
@@ -156,8 +164,20 @@ export default function OpticalEditor() {
     [vertex, setVertex] = useState<number[] | null>(null),
     [tab, setTab] = useState("properties"),
     [style, setStyle] = useState(
-      process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL ||
-      process.env.NEXT_PUBLIC_MAP_STYLE_URL ||
+      (
+        {
+          light: "https://tiles.openfreemap.org/styles/positron",
+          dark: "https://tiles.openfreemap.org/styles/dark",
+          streets:
+            process.env.NEXT_PUBLIC_MAP_STYLE_URL ||
+            "https://tiles.openfreemap.org/styles/liberty",
+          satellite:
+            process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL ||
+            "/maps/satellite.json",
+        } as Record<string, string>
+      )[String(activeProject.view.cartography)] ||
+        process.env.NEXT_PUBLIC_SATELLITE_STYLE_URL ||
+        process.env.NEXT_PUBLIC_MAP_STYLE_URL ||
         "https://tiles.openfreemap.org/styles/liberty",
     ),
     [hiddenKinds, setHiddenKinds] = useState<string[]>([]),
@@ -186,7 +206,13 @@ export default function OpticalEditor() {
     initializedFocus = useRef(false),
     abort = useRef(false),
     lastCoordinate = useRef(0);
-  const writable = ready && Boolean(meta.permissions?.some(p=>p.endsWith('.create') || p.endsWith('.edit')));
+  const writable =
+    ready &&
+    Boolean(
+      meta.permissions?.some(
+        (p) => p.endsWith(".create") || p.endsWith(".edit"),
+      ),
+    );
   const load = useCallback(async () => {
     const [data, map] = await Promise.all([
       request("/api/network"),
@@ -195,7 +221,11 @@ export default function OpticalEditor() {
     setAssets(data);
     setMeta(map);
     setReady(true);
-    if (!initializedFocus.current && data.length) {
+    if (
+      !initializedFocus.current &&
+      !activeProject.view.camera &&
+      data.length
+    ) {
       initializedFocus.current = true;
       if (
         (data as EditorAsset[]).some((a) =>
@@ -215,7 +245,7 @@ export default function OpticalEditor() {
       });
     }
     return data as EditorAsset[];
-  }, []);
+  }, [request, activeProject.view.camera]);
   useEffect(() => {
     abort.current = false;
     void load().catch((e) => {
@@ -254,12 +284,178 @@ export default function OpticalEditor() {
     [trace],
   );
   const changed = !!draft || drawing.length > 0 || formDirty;
+  const [projectSaving, setProjectSaving] = useState(false),
+    [projectNotice, setProjectNotice] = useState("Todas as alterações salvas"),
+    [viewDirty, setViewDirty] = useState(false),
+    [online, setOnline] = useState(true),
+    [viewConflict, setViewConflict] = useState(false),
+    [camera, setCamera] = useState(
+      activeProject.view.camera as
+        { lng: number; lat: number; zoom: number } | undefined,
+    ),
+    [recovery, setRecovery] = useState<{
+      selectedId: string | null;
+      version?: number;
+      form: Form;
+      draft: MapGeometry | null;
+      drawing: Coordinate[];
+      mode: string;
+    } | null>(null);
+  const projectVersion = useRef(activeProject.version),
+    editEpoch = useRef(0),
+    viewEpoch = useRef(0),
+    recoveryRead = useRef(false);
+  const recoveryKey = `fibermap-draft:${activeProject.actorId}:${activeProject.organizationId}:${project}`;
+  useEffect(() => {
+    const sync = () => setOnline(navigator.onLine);
+    sync();
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, []);
+  useEffect(() => {
+    if (!ready || recoveryRead.current) return;
+    recoveryRead.current = true;
+    let active = true;
+    void Promise.resolve()
+      .then(() => sessionStorage.getItem(recoveryKey))
+      .then((saved) => {
+        if (saved && active) setRecovery(JSON.parse(saved));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [ready, recoveryKey]);
+  useEffect(() => {
+    if (!ready || !changed) return;
+    try {
+      sessionStorage.setItem(
+        recoveryKey,
+        JSON.stringify({
+          selectedId: selected?.id ?? null,
+          version: selected?.version,
+          form,
+          draft,
+          drawing,
+          mode,
+        }),
+      );
+    } catch {
+      queueMicrotask(() =>
+        setProjectNotice(
+          "Rascunho pendente; armazenamento local indisponível.",
+        ),
+      );
+    }
+  }, [ready, changed, selected, form, draft, drawing, mode, recoveryKey]);
+  useEffect(() => {
+    if (!changed) return;
+    const guard = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [changed]);
+  async function persistProjectView() {
+    if (!online) {
+      setProjectNotice(
+        "Sem conexão. Alterações pendentes serão mantidas nesta aba.",
+      );
+      return false;
+    }
+    setProjectSaving(true);
+    const epoch = viewEpoch.current;
+    try {
+      const value = await request(
+        `/api/projects/${project}`,
+        {
+          action: "save",
+          version: projectVersion.current,
+          view: {
+            ...(camera ? { camera } : {}),
+            dark,
+            cartography:
+              style === "https://tiles.openfreemap.org/styles/positron"
+                ? "light"
+                : style === "https://tiles.openfreemap.org/styles/dark"
+                  ? "dark"
+                  : style ===
+                      (process.env.NEXT_PUBLIC_MAP_STYLE_URL ||
+                        "https://tiles.openfreemap.org/styles/liberty")
+                    ? "streets"
+                    : "satellite",
+          },
+        },
+        "PATCH",
+      );
+      projectVersion.current = value.version;
+      if (epoch === viewEpoch.current) setViewDirty(false);
+      setProjectNotice("Todas as alterações salvas");
+      return true;
+    } catch (e) {
+      setViewConflict(true);
+      setProjectNotice(`Erro ao salvar: ${(e as Error).message}`);
+      return false;
+    } finally {
+      setProjectSaving(false);
+    }
+  }
+  const autoView = useEffectEvent(() => {
+    void persistProjectView();
+  });
+  useEffect(() => {
+    if (
+      !viewDirty ||
+      projectSaving ||
+      busy ||
+      !ready ||
+      !writable ||
+      !online ||
+      viewConflict
+    )
+      return;
+    const timer = window.setTimeout(() => autoView(), 1200);
+    return () => window.clearTimeout(timer);
+  }, [
+    viewDirty,
+    projectSaving,
+    busy,
+    ready,
+    writable,
+    online,
+    viewConflict,
+    camera,
+    dark,
+  ]);
+  async function switchProject() {
+    if (!ensureDiscard()) return;
+    if (viewDirty && writable && !(await persistProjectView())) return;
+    router.push(`/projetos?company=${activeProject.organizationId}`);
+  }
+  async function saveProject() {
+    if (drawing.length) {
+      setProjectNotice(
+        "Conclua o desenho e confira seus dados antes de salvar.",
+      );
+      return;
+    }
+    if (changed && !(await save())) return;
+    await persistProjectView();
+  }
+
   function ensureDiscard() {
     return (
       !changed || window.confirm("Descartar as alterações ainda não salvas?")
     );
   }
   function clear() {
+    setAssetSaveBlocked(false);
+    try {
+      sessionStorage.removeItem(recoveryKey);
+    } catch {}
+    setRecovery(null);
     setFormDirty(false);
     setDraft(null);
     setDrawing([]);
@@ -325,6 +521,7 @@ export default function OpticalEditor() {
     }));
   }
   function geometry(g: MapGeometry) {
+    editEpoch.current++;
     const previous = draft ?? selected?.geometry;
     if (previous && JSON.stringify(g) !== JSON.stringify(previous))
       setHistory((h) => ({
@@ -363,8 +560,11 @@ export default function OpticalEditor() {
     setBusy(true);
     try {
       await action();
+      return true;
     } catch (e) {
+      setProjectNotice("Erro ao salvar. Alterações não confirmadas.");
       setNotice(e instanceof Error ? e.message : "Operação indisponível.");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -400,8 +600,9 @@ export default function OpticalEditor() {
   }
   async function save(override?: MapGeometry) {
     const g = override ?? draft ?? selected?.geometry;
-    if (!g) return;
-    await run(async () => {
+    if (!g) return false;
+    const epoch = editEpoch.current;
+    const saved = await run(async () => {
       const body = {
         ...form,
         geometry: g,
@@ -424,14 +625,51 @@ export default function OpticalEditor() {
         body,
         selected ? "PATCH" : "POST",
       );
+      const latest = await load();
+      if (epoch !== editEpoch.current) {
+        const fresh = latest.find((a) => a.id === result.id);
+        if (fresh) setSelected(fresh);
+        return;
+      }
       clear();
       setSelected(null);
-      const latest = await load();
       const a = latest.find((a) => a.id === result.id);
       if (a) select(a, true);
       setNotice("Elemento salvo e auditado.");
     });
+    setAssetSaveBlocked(!saved);
+    return saved;
   }
+  const autoSave = useEffectEvent(() => {
+    void save();
+  });
+  useEffect(() => {
+    if (
+      !ready ||
+      !online ||
+      busy ||
+      !writable ||
+      !selected ||
+      assetSaveBlocked ||
+      (!formDirty && !draft) ||
+      !form.name.trim() ||
+      !form.code.trim() ||
+      !compatible(form.kind, draft ?? selected.geometry)
+    )
+      return;
+    const timer = window.setTimeout(() => autoSave(), 1800);
+    return () => window.clearTimeout(timer);
+  }, [
+    ready,
+    online,
+    busy,
+    writable,
+    selected,
+    formDirty,
+    form,
+    draft,
+    assetSaveBlocked,
+  ]);
   async function updateLayer(l: Layer, patch: Partial<Layer>) {
     await run(async () => {
       await request("/api/map", { type: "layer", ...l, ...patch });
@@ -488,7 +726,10 @@ export default function OpticalEditor() {
       setPreview([]);
       setUpload(null);
       setImportOpen(false);
-      setProject(result.projectId);
+      if (result.projectId !== project)
+        router.push(
+          `/?project=${result.projectId}&company=${activeProject.organizationId}`,
+        );
       await load();
       setNotice(
         `${result.count} elementos importados. O arquivo original foi preservado no backup.`,
@@ -522,7 +763,8 @@ export default function OpticalEditor() {
   }
   async function exportData(type: string) {
     await run(async () => {
-      if(!meta.permissions?.includes('network.export')) throw new Error('Seu perfil não permite exportar informações.');
+      if (!meta.permissions?.includes("network.export"))
+        throw new Error("Seu perfil não permite exportar informações.");
       if (type === "backup") {
         download(
           JSON.stringify(await request("/api/backup"), null, 2),
@@ -588,6 +830,7 @@ export default function OpticalEditor() {
     });
   }
   function field<K extends keyof Form>(key: K, value: Form[K]) {
+    editEpoch.current++;
     if (key === "color") setTrace([]);
     setFormDirty(true);
     setForm((f) => ({ ...f, [key]: value }));
@@ -659,7 +902,7 @@ export default function OpticalEditor() {
                   key={a.id}
                   onClick={() => {
                     select(a);
-                    setProject(a.projectId ?? "");
+
                     setFocus(structuredClone(a.geometry));
                     setQuery("");
                   }}
@@ -683,24 +926,36 @@ export default function OpticalEditor() {
             </div>
           )}
         </div>
-        <select
-          aria-label="Projeto ativo"
-          value={project}
-          onChange={(e) => {
-            if (ensureDiscard()) {
-              clear();
-              setSelected(null);
-              setProject(e.target.value);
-            }
+        <span className="editor-active-project" title={activeProject.name}>
+          Projeto ativo: <strong>{activeProject.name}</strong>
+        </span>
+        <button
+          className="editor-action"
+          onClick={() => {
+            void switchProject();
           }}
         >
-          <option value="">Todos os projetos</option>
-          {meta.projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+          Trocar Projeto
+        </button>
+        <button
+          className="editor-action"
+          disabled={!writable || busy}
+          onClick={() => void saveProject()}
+        >
+          <Save size={15} />
+          <span>Salvar Projeto</span>
+        </button>
+        <span className="editor-project-state" role="status">
+          {!online
+            ? "Sem conexão · alterações pendentes"
+            : busy || projectSaving
+              ? "Salvando…"
+              : projectNotice.startsWith("Erro")
+                ? projectNotice
+                : changed || viewDirty
+                  ? "Alterações não salvas"
+                  : projectNotice}
+        </span>
         <button
           className="editor-action"
           aria-label="Importar"
@@ -714,7 +969,7 @@ export default function OpticalEditor() {
           className="editor-export"
           aria-label="Exportar rede"
           defaultValue=""
-          disabled={busy || !meta.permissions?.includes('network.export')}
+          disabled={busy || !meta.permissions?.includes("network.export")}
           onChange={(e) => {
             const value = e.target.value;
             e.target.value = "";
@@ -732,15 +987,24 @@ export default function OpticalEditor() {
         <button
           className="editor-icon"
           aria-label="Alternar tema"
-          onClick={() => setDark(!dark)}
+          onClick={() => {
+            setDark(!dark);
+            viewEpoch.current++;
+            setViewDirty(true);
+          }}
         >
           {dark ? <Sun size={19} /> : <Moon size={19} />}
         </button>
         <HelpLink />
-        <a className="editor-inventory" href="/inventario">
+        <a
+          className="editor-inventory"
+          href={`/inventario?project=${project}&company=${activeProject.organizationId}`}
+        >
           Inventário técnico ↗
         </a>
-        <a href="/conta" title="Conta e administração">Minha conta</a>
+        <a href="/conta" title="Conta e administração">
+          Minha conta
+        </a>
       </header>
       <input
         ref={fileInput}
@@ -752,8 +1016,76 @@ export default function OpticalEditor() {
           e.target.value = "";
         }}
       />
+      {!online && (
+        <div className="editor-project-banner" role="alert">
+          Sem conexão. As edições pendentes ficam nesta aba; nenhuma gravação
+          será anunciada antes da confirmação do servidor.
+        </div>
+      )}
+      {recovery && (
+        <div className="editor-project-banner">
+          <span>Há um rascunho não salvo deste projeto nesta aba.</span>
+          <button
+            onClick={() => {
+              const a = assets.find((a) => a.id === recovery.selectedId);
+              if (
+                recovery.selectedId &&
+                (!a || a.version !== recovery.version)
+              ) {
+                setNotice(
+                  "O elemento mudou no servidor. Baixe o rascunho e compare antes de reaplicar.",
+                );
+                return;
+              }
+              editEpoch.current++;
+              setSelected(a ?? null);
+              setForm(recovery.form);
+              setDraft(recovery.draft);
+              setDrawing(recovery.drawing);
+              setMode(recovery.mode);
+              setFormDirty(true);
+              setRight(true);
+              setRecovery(null);
+            }}
+          >
+            Recuperar rascunho
+          </button>
+          <button
+            onClick={() =>
+              download(
+                JSON.stringify(recovery, null, 2),
+                "fibermap-rascunho.json",
+              )
+            }
+          >
+            Baixar rascunho
+          </button>
+          <button
+            onClick={() => {
+              sessionStorage.removeItem(recoveryKey);
+              setRecovery(null);
+            }}
+          >
+            Descartar rascunho
+          </button>
+        </div>
+      )}
       <section className="editor-body">
         <Map
+          initialCamera={
+            activeProject.view.camera as
+              { lng: number; lat: number; zoom: number } | undefined
+          }
+          onViewport={(value) => {
+            setCamera(value);
+            viewEpoch.current++;
+            if (writable) setViewDirty(true);
+          }}
+          onContextMenu={(asset, at) => {
+            if (!ensureDiscard()) return;
+            select(asset, true);
+            setContextMenu({ asset, ...at });
+          }}
           assets={visible}
           preview={visiblePreview}
           mode={mode}
@@ -980,22 +1312,12 @@ export default function OpticalEditor() {
             </div>
             <button
               className="editor-new-project"
-              disabled={!writable || busy}
               onClick={() => {
-                const name = window.prompt("Nome do novo projeto");
-                if (name)
-                  void run(async () => {
-                    const p = await request("/api/map", {
-                      type: "project",
-                      name,
-                    });
-                    await load();
-                    setProject(p.id);
-                  });
+                void switchProject();
               }}
             >
               <Plus size={15} />
-              Novo projeto
+              Meus Projetos
             </button>
             {project && (
               <button
@@ -1010,7 +1332,7 @@ export default function OpticalEditor() {
                   );
                   if (pattern)
                     void run(async () => {
-                      await request("/api/map", {
+                      const updatedProject = await request("/api/map", {
                         type: "project",
                         id: p.id,
                         name: p.name,
@@ -1019,6 +1341,7 @@ export default function OpticalEditor() {
                           .map((c) => c.trim())
                           .filter(Boolean),
                       });
+                      projectVersion.current = updatedProject.version;
                       await load();
                       setNotice(
                         "Padrão salvo para os próximos cabos do projeto.",
@@ -1034,7 +1357,11 @@ export default function OpticalEditor() {
               <select
                 aria-label="Cartografia"
                 value={style}
-                onChange={(e) => setStyle(e.target.value)}
+                onChange={(e) => {
+                  setStyle(e.target.value);
+                  viewEpoch.current++;
+                  if (writable) setViewDirty(true);
+                }}
               >
                 <option
                   value={
@@ -1185,11 +1512,71 @@ export default function OpticalEditor() {
                 <PanelRightClose size={20} />
               </button>
             </div>
-            {selected && ["CTO", "CLOSURE", "DIO"].includes(selected.kind) && (
-              <button className="editor-primary" style={{ margin: "8px 16px", width: "calc(100% - 32px)" }} onClick={() => { if (ensureDiscard()) setDiagramId(selected.id); }}>
-                <Network size={17} /> Diagrama Óptico
+            {selected && (
+              <button
+                disabled={
+                  !meta.permissions?.includes(
+                    assetPermission(selected.kind, "edit"),
+                  ) || busy
+                }
+                onClick={() => {
+                  if (ensureDiscard()) {
+                    select(selected, true);
+                    setRenameTarget({
+                      id: selected.id,
+                      name: selected.name,
+                      version: selected.version,
+                    });
+                  }
+                }}
+              >
+                Renomear
               </button>
             )}
+            {selected?.kind === "CUSTOMER" && (
+              <button
+                onClick={() =>
+                  void run(async () => {
+                    if (!ensureDiscard()) return;
+                    const boxes: { id: string; code: string; name: string }[] =
+                      await request(
+                        `/api/assets/${selected.id}/optical-location`,
+                      );
+                    if (!boxes.length) {
+                      setNotice(
+                        "Este cliente ainda não está associado a uma CTO. Abra o diagrama da CTO para vincular o cliente e seu drop.",
+                      );
+                      return;
+                    }
+                    let location = boxes[0];
+                    if (boxes.length > 1) {
+                      const code = window.prompt(
+                        "Código da CTO / caixa: " +
+                          boxes.map((b) => b.code).join(", "),
+                      );
+                      const chosen = boxes.find((b) => b.code === code);
+                      if (!chosen) return;
+                      location = chosen;
+                    }
+                    setDiagramId(location.id);
+                  })
+                }
+              >
+                Consultar ligação óptica
+              </button>
+            )}
+            {selected &&
+              ["CTO", "CLOSURE", "DIO", "POP"].includes(selected.kind) && (
+                <button
+                  className="editor-primary"
+                  style={{ margin: "8px 16px", width: "calc(100% - 32px)" }}
+                  onClick={() => {
+                    if (ensureDiscard()) setDiagramId(selected.id);
+                  }}
+                >
+                  <Network size={17} /> Diagrama Óptico
+                </button>
+              )}
             <div className="editor-tabs">
               {[
                 ["properties", "Propriedades"],
@@ -1365,14 +1752,7 @@ export default function OpticalEditor() {
                   </label>
                   <label>
                     Projeto
-                    <select
-                      value={form.projectId}
-                      onChange={(e) => {
-                        field("projectId", e.target.value);
-                        field("layerId", "");
-                      }}
-                    >
-                      <option value="">Sem projeto</option>
+                    <select value={form.projectId} disabled>
                       {meta.projects.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
@@ -1485,7 +1865,9 @@ export default function OpticalEditor() {
                     <label>
                       {form.kind === "SPLITTER"
                         ? "Saídas do splitter"
-                        : "Portas"}
+                        : form.kind === "CTO"
+                          ? "Acopladores (entrada e saída)"
+                          : "Portas"}
                       <input
                         type="number"
                         list="splitter-ports"
@@ -2281,7 +2663,69 @@ export default function OpticalEditor() {
           </section>
         </div>
       )}
-      {diagramId && <OpticalDiagram equipmentId={diagramId} onClose={() => setDiagramId(null)} onSaved={() => { void load().catch(e => setNotice(e.message)); }} />}
+      {contextMenu && (
+        <div
+          className="editor-context-menu"
+          role="menu"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 190),
+            top: Math.min(contextMenu.y, window.innerHeight - 90),
+          }}
+        >
+          <button
+            role="menuitem"
+            disabled={
+              !meta.permissions?.includes(
+                assetPermission(contextMenu.asset.kind, "edit"),
+              )
+            }
+            onClick={() => {
+              setRenameTarget({
+                id: contextMenu.asset.id,
+                name: contextMenu.asset.name,
+                version: contextMenu.asset.version,
+              });
+              setContextMenu(null);
+            }}
+          >
+            Renomear
+          </button>
+          <button role="menuitem" onClick={() => setContextMenu(null)}>
+            Fechar
+          </button>
+        </div>
+      )}
+      {renameTarget && (
+        <RenameDialog
+          target={renameTarget}
+          onClose={() => setRenameTarget(null)}
+          onSaved={() => {
+            void load()
+              .then((list) => {
+                const a = list.find((a) => a.id === renameTarget.id);
+                if (a) select(a, true);
+              })
+              .catch((e) => setNotice(e.message));
+          }}
+        />
+      )}
+      {diagramId && (
+        <OpticalDiagram
+          equipmentId={diagramId}
+          onClose={() => setDiagramId(null)}
+          onSaved={() => {
+            const epoch = editEpoch.current;
+            void load()
+              .then((list) => {
+                if (!changed && selected && epoch === editEpoch.current) {
+                  const fresh = list.find((a) => a.id === selected.id);
+                  if (fresh) select(fresh, true);
+                }
+              })
+              .catch((e) => setNotice(e.message));
+          }}
+        />
+      )}
       {!!preview.length && !importOpen && (
         <button
           className="editor-review-import"

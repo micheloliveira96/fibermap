@@ -13,6 +13,7 @@ const uid = randomUUID(),
   orgs: string[] = [],
   users: string[] = [uid],
   plans: string[] = [];
+const projectByOrganization=new Map<string,string>(), organizationByCookie=new Map<string,string>();
 const api = "/api/administracao",
   platform = api + "?scope=platform",
   company = api + "?scope=company";
@@ -23,13 +24,16 @@ async function call(
   method = body ? "POST" : "GET",
   org?: string,
 ) {
+  const organization=org??organizationByCookie.get(cookie);
+  const project=organization?projectByOrganization.get(organization):undefined;
   return fetch(base + path, {
     method,
     headers: {
       origin: base!,
       cookie,
       "Content-Type": "application/json",
-      ...(org ? { "x-organization-id": org } : {}),
+      ...(organization ? { "x-organization-id": organization } : {}),
+      ...(project?{"x-project-id":project}:{}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -53,10 +57,9 @@ async function login(mail: string) {
     password,
   });
   assert.equal(r.status, 200, await r.clone().text());
-  return r.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0])
-    .join("; ");
+  const cookie=r.headers.getSetCookie().map(c=>c.split(";")[0]).join("; ");
+  const m=await db.membership.findFirst({where:{user:{email:mail}}});if(m)organizationByCookie.set(cookie,m.organizationId);
+  return cookie;
 }
 async function accept(url: string) {
   const token = new URL(url).searchParams.get("token");
@@ -128,6 +131,7 @@ try {
       },
     });
     orgs.push(created.result.id);
+    projectByOrganization.set(created.result.id,(await db.networkProject.create({data:{organizationId:created.result.id,name:"QA rede ativa"}})).id);
     assert.ok(created.inviteUrl);
     const token = await accept(created.inviteUrl);
     assert.equal(
@@ -155,6 +159,7 @@ try {
       "map.view",
       "network.view",
       "projects.view",
+      "projects.edit",
       "cto.create",
       "cto.edit",
       "users.view",
@@ -296,7 +301,7 @@ try {
         "PATCH",
       )
     ).status,
-    404,
+    400,
   );
   assert.equal((await call(other, "/api/backup")).status, 200);
   // Direct database cross-company relation must also fail, beyond HTTP filtering.
@@ -315,7 +320,7 @@ try {
     data: {
       name: "QA operador",
       role: "OPERATOR",
-      permissions: [...view, "cto.create"],
+      permissions: [...view, "projects.edit", "cto.create"],
       delegable: [],
     },
   });
@@ -370,10 +375,10 @@ try {
   await ok(p, platform, { op: "license", id: orgs[0], data: license(plan.id) });
   const concurrent = await Promise.all(
     Array.from({ length: 4 }, (_, n) =>
-      call(owner, "/api/map", { type: "project", name: "QA concorrente " + n }),
+      call(owner, "/api/projects", { name: "QA concorrente " + n }),
     ),
   );
-  assert.equal(concurrent.filter((r) => r.status === 200).length, 2);
+  assert.equal(concurrent.filter((r) => r.status === 201).length, 1);
   assert.equal(
     await db.networkProject.count({ where: { organizationId: orgs[0] } }),
     2,
@@ -403,8 +408,9 @@ try {
   await db.asset.deleteMany({ where });
   await db.importBatch.deleteMany({ where });
   await db.mapLayer.deleteMany({ where });
-  await db.networkProject.deleteMany({ where });
   await db.auditLog.deleteMany({ where });
+  await db.projectGrant.deleteMany({where});
+  await db.networkProject.deleteMany({ where });
   await db.administrativeAudit.deleteMany({
     where: {
       OR: [where, { actorId: { in: users } }, { entityId: { in: plans } }],

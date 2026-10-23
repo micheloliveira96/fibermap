@@ -27,7 +27,7 @@ const org = randomUUID(),
   user = randomUUID(),
   email = `${user}@fibermap.invalid`,
   password = randomUUID() + randomUUID();
-let cookie = "";
+let cookie = "", activeProjectId = "";
 async function call(
   path: string,
   body?: unknown,
@@ -41,6 +41,7 @@ async function call(
       origin: base!,
       cookie,
       "x-organization-id": organization,
+      ...(activeProjectId?{"x-project-id":activeProjectId}:{}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -100,6 +101,7 @@ try {
     .getSetCookie()
     .map((c) => c.split(";")[0])
     .join("; ");
+  activeProjectId=(await ok("/api/projects",{name:"QA diagrama isolado"},"POST",201)).id;
   const manual = await call("/api/help/manual");
   assert.equal(manual.status, 200);
   assert.equal(manual.headers.get("content-type"), "application/pdf");
@@ -542,6 +544,7 @@ try {
     await tx.connectionTerminal.deleteMany({ where });
     await tx.networkConnection.deleteMany({ where });
   });
+  await db.diagramComponent.deleteMany({where});
   await db.internalLink.deleteMany({ where });
   await db.opticalTerminal.deleteMany({ where });
   await db.cableAccess.deleteMany({ where });
@@ -551,6 +554,8 @@ try {
   await db.cableSegment.deleteMany({ where });
   await db.asset.deleteMany({ where });
   await db.auditLog.deleteMany({ where });
+  await db.projectGrant.deleteMany({where});
+  await db.networkProject.deleteMany({where});
   await db.membership.deleteMany({ where });
   await db.administrativeAudit.deleteMany({ where });
   await db.license.deleteMany({ where });

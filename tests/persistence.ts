@@ -58,5 +58,5 @@ try {
   assert.ok(pop && closure);
   console.log('PASS: persistência de 24/12 fibras, rota geográfica, rastreamento relido, restrições, rollback e isolamento de consulta.');
 } finally {
-  await db.$transaction(async tx => { await tx.connectionTerminal.deleteMany({where:{organizationId}}); await tx.networkConnection.deleteMany({where:{organizationId}}); }); await db.internalLink.deleteMany({where:{organizationId}}); await db.opticalTerminal.deleteMany({where:{organizationId}}); await db.fiberStrand.deleteMany({where:{asset:{organizationId}}}); await db.asset.deleteMany({where:{organizationId}}); await db.organization.deleteMany({where:{id:organizationId}}); await db.$disconnect();
+  await db.$transaction(async tx => { await tx.connectionTerminal.deleteMany({where:{organizationId}}); await tx.networkConnection.deleteMany({where:{organizationId}}); }); await db.internalLink.deleteMany({where:{organizationId}}); await db.opticalTerminal.deleteMany({where:{organizationId}}); await db.fiberStrand.deleteMany({where:{asset:{organizationId}}}); await db.asset.deleteMany({where:{organizationId}}); await db.auditLog.deleteMany({where:{organizationId}}); await db.networkProject.deleteMany({where:{organizationId}}); await db.license.deleteMany({where:{organizationId}}); await db.organization.deleteMany({where:{id:organizationId}}); await db.$disconnect();
 }

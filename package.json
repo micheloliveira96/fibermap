@@ -18,7 +18,9 @@
     "test:http": "tsx tests/http.ts",
     "test:saas": "tsx tests/saas-http.ts",
     "bootstrap:platform": "tsx scripts/bootstrap-platform.ts",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test:projects": "tsx tests/projects-components-http.ts",
+    "test:migration": "node tests/projects-migration.cjs"
   },
   "keywords": [],
   "author": "",

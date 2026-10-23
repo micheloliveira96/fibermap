@@ -1,4 +1,5 @@
 'use client';
+import { useProjectFetch } from "./project-context";
 import { HelpLink } from "./help-link";
 import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -9,8 +10,9 @@ const NetworkMap = dynamic(() => import('./network-map'), { ssr: false, loading:
 const navigation = [{ label: 'Dashboard', icon: LayoutDashboard }, { label: 'Mapa da Rede', icon: Map }, { label: 'Topologia', icon: GitBranch }, { label: 'Rastrear Fibra', icon: Activity }, { label: 'Capacidade', icon: Layers }];
 type Path = { nodes: { id: string; label: string; assetId: string; kind: string }[]; outcome: string; lossDb: number };
 export default function Workspace() {
+  const fetch=useProjectFetch();
   const [assets, setAssets] = useState<Asset[]>([]), [view, setView] = useState('Mapa da Rede'), [query, setQuery] = useState(''), [status, setStatus] = useState(''), [mode, setMode] = useState('select'), [selected, setSelected] = useState<Asset | null>(null), [geometry, setGeometry] = useState<Geometry | null>(null), [error, setError] = useState(''), [notice, setNotice] = useState(''), [loading, setLoading] = useState(true), [form, setForm] = useState(false), [dark, setDark] = useState(false), [mobile, setMobile] = useState(false), [hidden, setHidden] = useState<string[]>([]), [paths, setPaths] = useState<Path[]>([]), [center, setCenter] = useState<[number, number] | null>(null), [busy, setBusy] = useState(false);
-  const load = useCallback(async () => { setLoading(true); try { const r = await fetch('/api/network'); const data = await r.json(); if (!r.ok) { setError(data.error); return; } setAssets(data); setError(''); } catch { setError('Não foi possível acessar o servidor.'); } finally { setLoading(false); } }, []);
+  const load = useCallback(async () => { setLoading(true); try { const r = await fetch('/api/network'); const data = await r.json(); if (!r.ok) { setError(data.error); return; } setAssets(data); setError(''); } catch { setError('Não foi possível acessar o servidor.'); } finally { setLoading(false); } }, [fetch]);
   useEffect(() => { void load(); }, [load]);
   const visible = assets.filter(a => !hidden.includes(a.kind) && (!status || a.status === status) && `${a.code} ${a.name}`.toLowerCase().includes(query.toLowerCase()));
   const terminals = assets.flatMap(a => a.terminals.map(t => ({ ...t, asset: a })));

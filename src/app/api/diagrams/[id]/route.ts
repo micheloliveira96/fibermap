@@ -1,4 +1,5 @@
-import { access, failure, sameOrigin, requirePermission } from "@/lib/access";
+import { projectAccess as access, assetScope, terminalScope } from "@/lib/project-access";
+import { failure, sameOrigin, requirePermission } from "@/lib/access";
 import { db } from "@/lib/db";
 import { readDiagram, saveDiagram, diagramSchema } from "@/lib/diagram-server";
 export async function GET(

@@ -1,7 +1,12 @@
+import {
+  projectAccess as access,
+  assetScope,
+  terminalScope,
+} from "@/lib/project-access";
 import { assetPermission } from "@/lib/permissions";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
+import { ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { assetSchema } from "@/lib/asset-input";
 import {
   createAsset,
@@ -19,10 +24,13 @@ export async function PATCH(r: Request, c: Context) {
     const d = assetSchema
       .extend({ version: z.number().int().positive() })
       .parse(await r.json());
-    requirePermission(m,assetPermission(d.kind,"edit"));
+    if (d.projectId && d.projectId !== m.projectId)
+      throw new ApiError(400, "Não mova equipamentos entre projetos.");
+    d.projectId = m.projectId;
+    requirePermission(m, assetPermission(d.kind, "edit"));
     const out = await db.$transaction(async (tx) => {
       const a = await tx.asset.findFirst({
-        where: { id, organizationId: m.organizationId },
+        where: { id, ...assetScope(m) },
       });
       if (!a) throw new ApiError(404, "Elemento não encontrado.");
       if (a.kind !== d.kind)
@@ -48,7 +56,7 @@ export async function PATCH(r: Request, c: Context) {
       void insertionLossDb;
       void colorPattern;
       const changed = await tx.asset.updateMany({
-        where: { id, organizationId: m.organizationId, version },
+        where: { id, ...assetScope(m), version },
         data: {
           ...fields,
           installedAt: fields.installedAt ? new Date(fields.installedAt) : null,
@@ -64,12 +72,17 @@ export async function PATCH(r: Request, c: Context) {
       await spatial(tx, id, d.geometry);
       if (JSON.stringify(a.geometry) !== JSON.stringify(d.geometry))
         await tx.cableSegment.deleteMany({
-          where: { assetId: id, organizationId: m.organizationId },
+          where: {
+            assetId: id,
+            organizationId: m.organizationId,
+            asset: { projectId: m.projectId },
+          },
         });
       await tx.auditLog.create({
         data: {
           organizationId: m.organizationId,
           actorId: m.actorId,
+          projectId: m.projectId,
           action: "UPDATE_ASSET",
           entityId: id,
           detail: { before: a, after: d },
@@ -92,18 +105,31 @@ export async function DELETE(r: Request, c: Context) {
         .parse(await r.json());
     await db.$transaction(async (tx) => {
       const a = await tx.asset.findFirst({
-        where: { id, organizationId: m.organizationId, version },
+        where: { id, ...assetScope(m), version },
       });
       if (!a)
         throw new ApiError(
           409,
           "Elemento inexistente ou alterado. Recarregue.",
         );
-      requirePermission(m,assetPermission(a.kind,"delete"));
-      if (await tx.cableAccess.count({where:{organizationId:m.organizationId,OR:[{equipmentId:id},{cableId:id}]}}) || await tx.opticalDiagram.count({where:{equipmentId:id,organizationId:m.organizationId}}))
-        throw new ApiError(409,"Este elemento possui uma montagem óptica salva. Preserve seus acessos físicos antes de excluir.");
+      requirePermission(m, assetPermission(a.kind, "delete"));
+      if (
+        (await tx.cableAccess.count({
+          where: {
+            organizationId: m.organizationId,
+            OR: [{ equipmentId: id }, { cableId: id }],
+          },
+        })) ||
+        (await tx.opticalDiagram.count({
+          where: { equipmentId: id, organizationId: m.organizationId },
+        }))
+      )
+        throw new ApiError(
+          409,
+          "Este elemento possui uma montagem óptica salva. Preserve seus acessos físicos antes de excluir.",
+        );
       const locked = await tx.asset.updateMany({
-        where: { id, organizationId: m.organizationId, version },
+        where: { id, ...assetScope(m), version },
         data: { version: { increment: 1 } },
       });
       if (!locked.count)
@@ -117,20 +143,33 @@ export async function DELETE(r: Request, c: Context) {
           "Remova as conexões ópticas antes de excluir este elemento.",
         );
       await tx.internalLink.deleteMany({
-        where: { assetId: id, organizationId: m.organizationId },
+        where: {
+          assetId: id,
+          organizationId: m.organizationId,
+          asset: { projectId: m.projectId },
+        },
       });
       await tx.opticalTerminal.deleteMany({
-        where: { assetId: id, organizationId: m.organizationId },
+        where: {
+          assetId: id,
+          organizationId: m.organizationId,
+          asset: { projectId: m.projectId },
+        },
       });
       await tx.fiberStrand.deleteMany({ where: { assetId: id } });
       await tx.cableSegment.deleteMany({
-        where: { assetId: id, organizationId: m.organizationId },
+        where: {
+          assetId: id,
+          organizationId: m.organizationId,
+          asset: { projectId: m.projectId },
+        },
       });
       await tx.asset.delete({ where: { id } });
       await tx.auditLog.create({
         data: {
           organizationId: m.organizationId,
           actorId: m.actorId,
+          projectId: m.projectId,
           action: "DELETE_ASSET",
           entityId: id,
           detail: { before: a },
@@ -154,11 +193,11 @@ export async function POST(r: Request, c: Context) {
       })
       .parse(await r.json());
     const a = await db.asset.findFirst({
-      where: { id, organizationId: m.organizationId },
+      where: { id, ...assetScope(m) },
       include: inventoryInclude,
     });
     if (!a) throw new ApiError(404, "Elemento não encontrado.");
-    requirePermission(m,assetPermission(a.kind,"create"));
+    requirePermission(m, assetPermission(a.kind, "create"));
     const parsed = assetSchema.parse({
       ...a,
       ...d,

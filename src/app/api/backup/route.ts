@@ -1,12 +1,13 @@
+import { projectAccess as access, assetScope, terminalScope } from "@/lib/project-access";
 import { db } from "@/lib/db";
-import { access, failure, requirePermission } from "@/lib/access";
+import { failure, requirePermission } from "@/lib/access";
 import { inventoryInclude } from "@/lib/inventory";
 export async function GET() {
   try {
     const m = await access(); requirePermission(m,"network.export");
     const out = await db.$transaction(
       async (tx) => {
-        const where = { organizationId: m.organizationId };
+        const where = assetScope(m);
         return {
           format: "FiberMap",
           version: 1,
@@ -15,16 +16,16 @@ export async function GET() {
             where: { id: m.organizationId },
             select: { id: true, name: true },
           }),
-          projects: await tx.networkProject.findMany({ where }),
+          projects: await tx.networkProject.findMany({ where: { id: m.projectId, organizationId: m.organizationId } }),
           layers: await tx.mapLayer.findMany({ where }),
           imports: (await tx.importBatch.findMany({ where })).map((i) => ({
             ...i,
             source: Buffer.from(i.source).toString("base64"),
           })),
           assets: await tx.asset.findMany({ where, include: inventoryInclude }),
-          internalLinks: await tx.internalLink.findMany({ where }),
-          opticalDiagrams: await tx.opticalDiagram.findMany({ where }),
-          cableAccesses: await tx.cableAccess.findMany({ where }),
+          internalLinks: await tx.internalLink.findMany({ where: { organizationId: m.organizationId, asset: { projectId: m.projectId } } }),
+          opticalDiagrams: await tx.opticalDiagram.findMany({ where: { organizationId: m.organizationId, equipment: { projectId: m.projectId } } }),
+          cableAccesses: await tx.cableAccess.findMany({ where: { organizationId: m.organizationId, equipment: { projectId: m.projectId } } }),
           connections: await tx.networkConnection.findMany({
             where,
             include: { terminals: true },

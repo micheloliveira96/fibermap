@@ -7,6 +7,8 @@ export type DiagramAccess = {
   fraction: number;
   fiberStates: Record<string, LocalStatus>;
   proposed?: boolean;
+  bothEnds?: boolean;
+  remoteAssetId?: string | null;
 };
 export type DiagramPort = {
   id: string;
@@ -35,6 +37,17 @@ export type DiagramAsset = {
   status: string;
   fibers: DiagramFiber[];
   terminals: DiagramPort[];
+  version?: number;
+  parentId?: string | null;
+  metadata?: unknown;
+  internalLinks?: {
+    id: string;
+    aId: string;
+    bId: string;
+    name?: string | null;
+    status: LocalStatus;
+    version?: number;
+  }[];
 };
 export type DiagramLink = {
   id: string;
@@ -59,6 +72,8 @@ export type DiagramLayout = {
   legend: boolean;
 };
 export type DiagramDraft = {
+  components?: string[];
+  componentCreates?: ComponentCreate[];
   portColors?: Record<string, string | null>;
   accesses: DiagramAccess[];
   splitters: { id: string; name: string; code: string; ports: number }[];
@@ -66,6 +81,8 @@ export type DiagramDraft = {
   layout: DiagramLayout;
 };
 export type DiagramData = {
+  components?: string[];
+  permissions?: string[];
   equipment: DiagramAsset;
   assets: DiagramAsset[];
   accesses: DiagramAccess[];
@@ -91,7 +108,10 @@ export function accessPorts(
 ): DiagramPort[] {
   if (access.end !== "MID")
     return asset.terminals.filter(
-      (t) => !t.attachmentId && t.kind === `FIBER_${access.end}`,
+      (t) =>
+        !t.attachmentId &&
+        (t.kind === `FIBER_${access.end}` ||
+          Boolean(access.bothEnds && ["FIBER_A", "FIBER_B"].includes(t.kind))),
     );
   return asset.fibers.flatMap((f) =>
     ["IN", "OUT"].map(
@@ -164,7 +184,7 @@ export function endpointColor(endpoint: DiagramEndpoint) {
 export function endpointLabel(endpoint: DiagramEndpoint) {
   const { asset, port } = endpoint;
   const fiber = asset.fibers.find((f) => f.id === port.fiberId);
-  return `${asset.code} · ${fiber ? `T${fiber.tube} F${fiber.number} ${fiber.color}` : `${port.label} · ${port.identificationColor ?? "cor neutra"}`}${port.localSide ? ` · ${port.localSide === "IN" ? "chegada" : "continuação"}` : ""}`;
+  return `${asset.code} · ${fiber ? `T${fiber.tube} F${fiber.number} ${fiber.color}${endpoint.access?.bothEnds ? ` · ${port.kind === "FIBER_A" ? "A" : "B"}` : ""}` : `${portDisplayLabel(asset, port)} · ${port.identificationColor ?? "cor neutra"}`}${port.localSide ? ` · ${port.localSide === "IN" ? "chegada" : "continuação"}` : ""}`;
 }
 export function pairError(
   a: DiagramEndpoint | undefined,
@@ -185,6 +205,14 @@ export function pairError(
           (p.access?.fiberStates[f.id] ?? "AVAILABLE") !== "AVAILABLE"))
     )
       return "Fibra ou componente indisponível.";
+    if (
+      p.asset.internalLinks?.some(
+        (link) =>
+          (link.aId === p.port.id || link.bId === p.port.id) &&
+          link.status !== "AVAILABLE",
+      )
+    )
+      return "Acoplador reservado ou indisponível.";
   }
   if (!a.port.fiberId && !b.port.fiberId && a.asset.id === b.asset.id)
     return "Portas do mesmo componente são incompatíveis.";
@@ -200,6 +228,96 @@ export function pairError(
   if (a.port.fiberId && a.port.fiberId === b.port.fiberId && !continuous)
     return "As pontas da mesma fibra não formam uma fusão válida.";
   return "";
+}
+export function portDisplayLabel(asset: DiagramAsset, port: DiagramPort) {
+  const adapter = asset.internalLinks?.find(
+    (l) => l.aId === port.id || l.bId === port.id,
+  );
+  if (!adapter) return port.label;
+  const index = Number(
+    asset.terminals
+      .find((p) => p.id === adapter.aId)
+      ?.label.match(/\d+/)?.[0] ??
+      (asset.internalLinks?.indexOf(adapter) ?? 0) + 1,
+  );
+  return `${adapter.name ?? `${asset.kind === "CTO" ? "Acoplador" : "Adaptador"} ${index}`} · ${asset.kind === "CTO" ? (adapter.aId === port.id ? "IN — Entrada" : "OUT — Saída") : adapter.aId === port.id ? "Frontal" : "Traseira"}`;
+}
+export type ComponentCreate = {
+  id: string;
+  name: string;
+  code: string;
+  kind: "OLT" | "DIO" | "PATCHCORD";
+  ports: number;
+  fiberCount: number;
+  manufacturer?: string;
+  model?: string;
+  chassis?: string;
+  slotCount?: number;
+  portsPerSlot?: number;
+  colorPattern?: string[];
+};
+export function componentAsset(input: ComponentCreate): DiagramAsset {
+  const asset: DiagramAsset = {
+    ...input,
+    status: "INSTALLED",
+    fibers: [],
+    terminals: [],
+    internalLinks: [],
+  };
+  if (input.kind === "PATCHCORD")
+    for (let i = 0; i < input.fiberCount; i++) {
+      const pattern = input.colorPattern?.length
+        ? input.colorPattern
+        : Object.keys(fiberColor).filter((c) => c !== "Aqua");
+      const fiber = {
+        id: `${input.id}:fiber:${i + 1}`,
+        number: i + 1,
+        tube: Math.floor(i / pattern.length) + 1,
+        color: pattern[i % pattern.length],
+        tubeColor: pattern[Math.floor(i / pattern.length) % pattern.length],
+        status: "AVAILABLE" as const,
+      };
+      asset.fibers.push(fiber);
+      for (const end of ["A", "B"])
+        asset.terminals.push({
+          id: `${fiber.id}:${end}`,
+          label: `${i + 1}/${end}`,
+          kind: `FIBER_${end}`,
+          fiberId: fiber.id,
+        });
+    }
+  else
+    for (let i = 0; i < input.ports; i++) {
+      if (input.kind === "OLT")
+        asset.terminals.push({
+          id: `${input.id}:pon:${i + 1}`,
+          label: input.portsPerSlot
+            ? `Slot ${Math.floor(i / input.portsPerSlot) + 1} · PON ${(i % input.portsPerSlot) + 1}`
+            : `PON ${i + 1}`,
+          kind: "PON",
+          fiberId: null,
+        });
+      else {
+        const aId = `${input.id}:front:${i + 1}`,
+          bId = `${input.id}:rear:${i + 1}`;
+        asset.terminals.push(
+          { id: aId, label: `Porta ${i + 1}`, kind: "DIO", fiberId: null },
+          {
+            id: bId,
+            label: `Porta ${i + 1} · traseira`,
+            kind: "DIO",
+            fiberId: null,
+          },
+        );
+        asset.internalLinks!.push({
+          id: `${input.id}:adapter:${i + 1}`,
+          aId,
+          bId,
+          status: "AVAILABLE",
+        });
+      }
+    }
+  return asset;
 }
 export function sequencePairs(a: string[], b: string[], reverse = false) {
   if (!a.length || a.length !== b.length)

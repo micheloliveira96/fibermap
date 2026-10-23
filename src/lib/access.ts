@@ -10,10 +10,10 @@ export class ApiError extends Error {
     super(message);
   }
 }
-export async function access(write = false) {
+export async function access(write = false, organizationOverride?: string) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) throw new ApiError(401, "Entre para acessar a rede.");
-  const organizationId = (await headers()).get("x-organization-id");
+  const organizationId = organizationOverride ?? (await headers()).get("x-organization-id");
   const membership = await db.membership.findFirst({
     where: {
       userId: session.user.id,

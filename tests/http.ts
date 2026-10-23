@@ -6,9 +6,9 @@ import { db } from '../src/lib/db';
 const base = process.env.TEST_API_URL;
 if (!base || !/^http:\/\/localhost:\d+$/.test(base)) throw new Error('Defina TEST_API_URL para um servidor local exclusivo de verificação.');
 const org = randomUUID(), user = randomUUID(), email = `${user}@fibermap.invalid`, password = randomUUID() + randomUUID();
-let cookie = '';
+let cookie = '',projectId='';
 async function call(path: string, body?: unknown) {
-  return fetch(base + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', origin: base!, cookie }, ...(body ? {body:JSON.stringify(body)} : {}) });
+  return fetch(base + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', origin: base!, cookie, ...(projectId?{'x-project-id':projectId}:{}) }, ...(body ? {body:JSON.stringify(body)} : {}) });
 }
 try {
   await db.organization.create({data:{id:org,name:'QA HTTP temporário'}});
@@ -20,6 +20,7 @@ try {
   assert.equal(login.status,200,await login.text());
   cookie = login.headers.getSetCookie().map(c=>c.split(';')[0]).join('; ');
   assert.ok(cookie);
+  projectId=(await db.networkProject.create({data:{organizationId:org,name:"QA rede HTTP"}})).id;
   const create = async (code:string,kind:string,ports=8,fiberCount=12) => {
     const geometry = ['BACKBONE','DISTRIBUTION'].includes(kind) ? {type:'LineString',coordinates:[[-46.63,-23.55],[-46.64,-23.56]]} : {type:'Point',coordinates:[-46.63,-23.55]};
     const result = await call('/api/network',{code,name:code,kind,status:'INSTALLED',geometry,ports,fiberCount});
@@ -49,5 +50,5 @@ try {
   console.log('PASS HTTP: sessão, 9 cadastros, 24/12 fibras, circuito cliente→PON, ocupação, duplicidade, conexão inválida, perfil e isolamento.');
 } finally {
   await db.$transaction(async tx=>{await tx.connectionTerminal.deleteMany({where:{organizationId:org}});await tx.networkConnection.deleteMany({where:{organizationId:org}});});
-  await db.internalLink.deleteMany({where:{organizationId:org}});await db.opticalTerminal.deleteMany({where:{organizationId:org}});await db.fiberStrand.deleteMany({where:{asset:{organizationId:org}}});await db.asset.deleteMany({where:{organizationId:org}});await db.auditLog.deleteMany({where:{organizationId:org}});await db.membership.deleteMany({where:{organizationId:org}});await db.administrativeAudit.deleteMany({where:{organizationId:org}});await db.license.deleteMany({where:{organizationId:org}});await db.organization.delete({where:{id:org}});await db.user.deleteMany({where:{id:user}});await db.$disconnect();
+  await db.internalLink.deleteMany({where:{organizationId:org}});await db.opticalTerminal.deleteMany({where:{organizationId:org}});await db.fiberStrand.deleteMany({where:{asset:{organizationId:org}}});await db.asset.deleteMany({where:{organizationId:org}});await db.auditLog.deleteMany({where:{organizationId:org}});await db.projectGrant.deleteMany({where:{organizationId:org}});await db.networkProject.deleteMany({where:{organizationId:org}});await db.membership.deleteMany({where:{organizationId:org}});await db.administrativeAudit.deleteMany({where:{organizationId:org}});await db.license.deleteMany({where:{organizationId:org}});await db.organization.delete({where:{id:org}});await db.user.deleteMany({where:{id:user}});await db.$disconnect();
 }

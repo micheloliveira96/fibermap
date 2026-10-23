@@ -96,6 +96,7 @@ model Membership {
   parentId String?
   parent Membership? @relation("Delegation", fields: [parentId, organizationId], references: [id, organizationId], onDelete: Restrict)
   children Membership[] @relation("Delegation")
+  projectGrants ProjectGrant[]
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   @@unique([userId, organizationId])
@@ -180,6 +181,7 @@ enum AssetKind {
   DISTRIBUTION
   DERIVATION
   DROP
+  PATCHCORD
   CLOSURE
   CTO
   SPLITTER
@@ -230,6 +232,9 @@ model Asset {
   opticalDiagram OpticalDiagram?
   cableAccesses CableAccess[] @relation("AccessEquipment")
   equipmentAccesses CableAccess[] @relation("AccessCable")
+  remoteAccesses CableAccess[] @relation("RemoteAccess")
+  diagramOwners DiagramComponent[] @relation("DiagramOwner")
+  diagramRepresentations DiagramComponent[] @relation("DiagramAsset")
   version Int @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -237,7 +242,7 @@ model Asset {
   terminals OpticalTerminal[]
   internalLinks InternalLink[]
   segments CableSegment[]
-  @@unique([organizationId, code])
+  @@unique([organizationId, projectId, code])
   @@unique([id, organizationId])
   @@index([organizationId, kind, status])
   @@index([organizationId, projectId, layerId])
@@ -248,13 +253,34 @@ model NetworkProject {
   organizationId String
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   name String
+  description String @default("")
+  region String @default("")
+  status String @default("ACTIVE")
+  restricted Boolean @default(false)
+  creatorId String?
+  updatedAt DateTime @default(now()) @updatedAt
+  version Int @default(1)
+  view Json @default("{}")
   colorPattern Json @default("[\"Azul\",\"Laranja\",\"Verde\",\"Marrom\",\"Cinza\",\"Branco\",\"Vermelho\",\"Preto\",\"Amarelo\",\"Violeta\",\"Rosa\",\"Turquesa\"]")
   createdAt DateTime @default(now())
   assets Asset[]
   layers MapLayer[]
   imports ImportBatch[]
+  grants ProjectGrant[]
+  connections NetworkConnection[]
+  audits AuditLog[]
   @@unique([id, organizationId])
   @@unique([organizationId, name])
+}
+model ProjectGrant {
+  id String @id @default(cuid())
+  organizationId String
+  projectId String
+  membershipId String
+  permissions String[] @default(["projects.view"])
+  project NetworkProject @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  membership Membership @relation(fields: [membershipId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  @@unique([projectId, membershipId])
 }
 model MapLayer {
   id String @id @default(cuid())
@@ -282,7 +308,7 @@ model ImportBatch {
   createdAt DateTime @default(now())
   assets Asset[]
   @@unique([id, organizationId])
-  @@unique([organizationId, digest])
+  @@unique([organizationId, projectId, digest])
 }
 model CableSegment {
   id String @id @default(cuid())
@@ -353,6 +379,9 @@ model InternalLink {
   assetId String
   aId String @unique
   bId String @unique
+  name String?
+  status FiberStatus @default(AVAILABLE)
+  version Int @default(1)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   asset Asset @relation(fields: [assetId, organizationId], references: [id, organizationId], onDelete: Restrict)
   a OpticalTerminal @relation("InternalA", fields: [aId, organizationId], references: [id, organizationId], onDelete: Restrict)
@@ -367,6 +396,8 @@ enum ConnectionKind {
 model NetworkConnection {
   id String @id @default(cuid())
   organizationId String
+  projectId String?
+  project NetworkProject? @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   kind ConnectionKind
   locationId String?
@@ -398,10 +429,22 @@ model CableAccess {
   end String
   fraction Float
   fiberStates Json @default("{}")
+  bothEnds Boolean @default(false)
+  remoteAssetId String?
+  remoteAsset Asset? @relation("RemoteAccess", fields: [remoteAssetId, organizationId], references: [id, organizationId], onDelete: Restrict)
   terminals OpticalTerminal[]
   @@unique([equipmentId, cableId])
   @@unique([id, cableId, organizationId])
   @@index([organizationId, cableId])
+}
+model DiagramComponent {
+  id String @id @default(cuid())
+  organizationId String
+  equipmentId String
+  assetId String
+  equipment Asset @relation("DiagramOwner", fields: [equipmentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  asset Asset @relation("DiagramAsset", fields: [assetId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  @@unique([equipmentId, assetId])
 }
 model ConnectionTerminal {
   terminalId String @id
@@ -413,6 +456,8 @@ model ConnectionTerminal {
 model AuditLog {
   id String @id @default(cuid())
   organizationId String
+  projectId String?
+  project NetworkProject? @relation(fields: [projectId, organizationId], references: [id, organizationId], onDelete: Restrict)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   actorId String
   action String

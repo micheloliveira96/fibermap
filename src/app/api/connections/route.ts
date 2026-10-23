@@ -1,5 +1,10 @@
+import {
+  projectAccess as access,
+  assetScope,
+  terminalScope,
+} from "@/lib/project-access";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
+import { ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { z } from "zod";
 const schema = z.object({
   a: z.string(),
@@ -14,7 +19,7 @@ export async function POST(request: Request) {
     sameOrigin(request);
     const member = await access(true),
       data = schema.parse(await request.json());
-    requirePermission(member,"connections.edit");
+    requirePermission(member, "connections.edit");
     if (data.a === data.b)
       throw new ApiError(400, "Selecione dois terminais diferentes.");
     const result = await db.$transaction(
@@ -22,9 +27,9 @@ export async function POST(request: Request) {
         const terminals = await tx.opticalTerminal.findMany({
           where: {
             id: { in: [data.a, data.b] },
-            organizationId: member.organizationId,
+            ...terminalScope(member),
           },
-          include: { fiber: true, asset: true },
+          include: { fiber: true, asset: { include: { internalLinks: true } } },
         });
         if (terminals.length !== 2)
           throw new ApiError(404, "Terminal não encontrado.");
@@ -32,7 +37,12 @@ export async function POST(request: Request) {
           terminals.some(
             (t) =>
               (t.fiber && t.fiber.status !== "AVAILABLE") ||
-              t.asset.status === "DISABLED",
+              t.asset.status === "DISABLED" ||
+              t.asset.internalLinks.some(
+                (l) =>
+                  (l.aId === t.id || l.bId === t.id) &&
+                  l.status !== "AVAILABLE",
+              ),
           )
         )
           throw new ApiError(
@@ -57,6 +67,7 @@ export async function POST(request: Request) {
           !(await tx.asset.findFirst({
             where: {
               id: data.locationId,
+              projectId: member.projectId,
               organizationId: member.organizationId,
               kind: { in: ["CLOSURE", "CTO", "POP", "DIO"] },
             },
@@ -65,17 +76,36 @@ export async function POST(request: Request) {
           throw new ApiError(400, "Local da conexão inválido.");
         for (const terminal of terminals) {
           const attachment = terminal.attachmentId
-            ? await tx.cableAccess.findUnique({where:{id:terminal.attachmentId}})
-            : terminal.fiberId ? await tx.cableAccess.findFirst({where:{cableId:terminal.assetId,end:terminal.kind==="FIBER_A"?"A":"B",organizationId:member.organizationId}}) : null;
+            ? await tx.cableAccess.findUnique({
+                where: { id: terminal.attachmentId },
+              })
+            : terminal.fiberId
+              ? await tx.cableAccess.findFirst({
+                  where: {
+                    cableId: terminal.assetId,
+                    end: terminal.kind === "FIBER_A" ? "A" : "B",
+                    organizationId: member.organizationId,
+                  },
+                })
+              : null;
           if (attachment && attachment.equipmentId !== data.locationId)
-            throw new ApiError(409,"A extremidade pertence a outra caixa. Abra seu Diagrama Óptico.");
-          const localStates=attachment?.fiberStates as Record<string,string>|undefined;
-          if(terminal.fiberId && localStates?.[terminal.fiberId] && localStates[terminal.fiberId]!=="AVAILABLE")
-            throw new ApiError(409,"Fibra indisponível neste acesso físico.");
+            throw new ApiError(
+              409,
+              "A extremidade pertence a outra caixa. Abra seu Diagrama Óptico.",
+            );
+          const localStates = attachment?.fiberStates as
+            Record<string, string> | undefined;
+          if (
+            terminal.fiberId &&
+            localStates?.[terminal.fiberId] &&
+            localStates[terminal.fiberId] !== "AVAILABLE"
+          )
+            throw new ApiError(409, "Fibra indisponível neste acesso físico.");
         }
         const connection = await tx.networkConnection.create({
           data: {
             organizationId: member.organizationId,
+            projectId: member.projectId,
             kind: data.kind,
             locationId: data.locationId,
             tray: data.tray,
@@ -94,6 +124,7 @@ export async function POST(request: Request) {
           data: {
             organizationId: member.organizationId,
             actorId: member.actorId,
+            projectId: member.projectId,
             action: "CONNECT",
             entityId: connection.id,
             detail: data,

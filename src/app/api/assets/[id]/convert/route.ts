@@ -1,7 +1,12 @@
+import {
+  projectAccess as access,
+  assetScope,
+  terminalScope,
+} from "@/lib/project-access";
 import { assetPermission } from "@/lib/permissions";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { access, ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
+import { ApiError, failure, sameOrigin, requirePermission } from "@/lib/access";
 import { assetSchema } from "@/lib/asset-input";
 import { populateTerminals, validatePlacement } from "@/lib/inventory";
 import { compatible } from "@/lib/geo";
@@ -22,11 +27,12 @@ export async function POST(r: Request, c: { params: Promise<{ id: string }> }) {
       })
       .extend({ version: z.number().int(), confirm: z.literal(true) })
       .parse(await r.json());
-    requirePermission(m,"equipment.edit"); requirePermission(m,assetPermission(input.kind,"create"));
+    requirePermission(m, "equipment.edit");
+    requirePermission(m, assetPermission(input.kind, "create"));
     await db.$transaction(
       async (tx) => {
         const a = await tx.asset.findFirst({
-          where: { id, organizationId: m.organizationId },
+          where: { id, ...assetScope(m) },
         });
         if (!a) throw new ApiError(404, "Elemento não encontrado.");
         if (a.kind !== "IMPORTED" || input.kind === "IMPORTED")
@@ -75,6 +81,7 @@ export async function POST(r: Request, c: { params: Promise<{ id: string }> }) {
           data: {
             organizationId: m.organizationId,
             actorId: m.actorId,
+            projectId: m.projectId,
             action: "CONVERT_IMPORTED",
             entityId: id,
             detail: input,

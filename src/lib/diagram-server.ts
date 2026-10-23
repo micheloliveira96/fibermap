@@ -4,11 +4,13 @@ import { z } from "zod";
 import { ApiError, requirePermission } from "./access";
 import { db } from "./db";
 import { inventoryInclude, createAsset } from "./inventory";
+import { assetPermission } from "./permissions";
 import { assetSchema } from "./asset-input";
 import {
   accessPorts,
   defaultLayout,
   splitterPorts,
+  componentAsset,
   type DiagramAsset,
   type DiagramData,
   type DiagramLayout,
@@ -20,6 +22,30 @@ const states = z.record(
   z.enum(["AVAILABLE", "RESERVED", "DAMAGED", "BLOCKED"]),
 );
 export const diagramSchema = z.object({
+  components: z.array(id).max(500).default([]),
+  componentCreates: z
+    .array(
+      z.object({
+        id,
+        name: z.string().trim().min(1).max(160),
+        code: z.string().trim().min(1).max(80),
+        kind: z.enum(["OLT", "DIO", "PATCHCORD"]),
+        ports: z.number().int().min(1).max(2880),
+        fiberCount: z.number().int().min(1).max(2880),
+        manufacturer: z.string().max(200).optional(),
+        model: z.string().max(160).optional(),
+        chassis: z.string().max(160).optional(),
+        slotCount: z.number().int().min(1).max(128).optional(),
+        portsPerSlot: z.number().int().min(1).max(128).optional(),
+        colorPattern: z
+          .array(z.string().min(1).max(40))
+          .min(1)
+          .max(48)
+          .optional(),
+      }),
+    )
+    .max(64)
+    .default([]),
   portColors: z
     .record(
       id,
@@ -39,6 +65,8 @@ export const diagramSchema = z.object({
         end: z.enum(["A", "B", "MID"]),
         fraction: z.number().min(0).max(1),
         fiberStates: states,
+        bothEnds: z.boolean().default(false),
+        remoteAssetId: id.nullable().default(null),
       }),
     )
     .max(100),
@@ -91,12 +119,19 @@ export const diagramSchema = z.object({
   }),
 });
 type Member = {
+  projectId: string;
   organizationId: string;
   actorId: string;
   permissions: string[];
   expired?: boolean;
 };
-const cableKinds = ["BACKBONE", "DISTRIBUTION", "DERIVATION", "DROP"];
+const cableKinds = [
+  "BACKBONE",
+  "DISTRIBUTION",
+  "DERIVATION",
+  "DROP",
+  "PATCHCORD",
+];
 export async function readDiagram(
   tx: Prisma.TransactionClient,
   member: Member,
@@ -107,7 +142,8 @@ export async function readDiagram(
     where: {
       id: equipmentId,
       organizationId,
-      kind: { in: ["CTO", "CLOSURE", "DIO"] },
+      projectId: member.projectId,
+      kind: { in: ["CTO", "CLOSURE", "DIO", "POP"] },
     },
     include: inventoryInclude,
   });
@@ -116,33 +152,59 @@ export async function readDiagram(
       404,
       "Equipamento compatível não encontrado nesta empresa.",
     );
-  const [all, saved, diagram, connections, associations] = await Promise.all([
-    tx.asset.findMany({
-      where: {
-        organizationId,
-        OR: [
-          { kind: { in: ["BACKBONE", "DISTRIBUTION", "DERIVATION", "DROP"] } },
-          { parentId: equipmentId, kind: "SPLITTER" },
-        ],
-      },
-      include: inventoryInclude,
-      orderBy: { code: "asc" },
-    }),
-    tx.cableAccess.findMany({
-      where: { organizationId, equipmentId },
-      orderBy: { id: "asc" },
-    }),
-    tx.opticalDiagram.findUnique({ where: { equipmentId } }),
-    tx.networkConnection.findMany({
-      where: { organizationId, locationId: equipmentId },
-      include: { terminals: true },
-      orderBy: { id: "asc" },
-    }),
-    tx.cableAccess.findMany({
-      where: { organizationId },
-      orderBy: { id: "asc" },
-    }),
-  ]);
+  const [all, saved, diagram, connections, associations, represented] =
+    await Promise.all([
+      tx.asset.findMany({
+        where: {
+          organizationId,
+          projectId: member.projectId,
+          kind: {
+            in: [
+              "BACKBONE",
+              "DISTRIBUTION",
+              "DERIVATION",
+              "DROP",
+              "PATCHCORD",
+              "SPLITTER",
+              "CUSTOMER",
+              "OLT",
+              "DIO",
+            ],
+          },
+          id: { not: equipmentId },
+        },
+        include: inventoryInclude,
+        orderBy: { code: "asc" },
+      }),
+      tx.cableAccess.findMany({
+        where: { organizationId, equipmentId },
+        orderBy: { id: "asc" },
+      }),
+      tx.opticalDiagram.findUnique({ where: { equipmentId } }),
+      tx.networkConnection.findMany({
+        where: {
+          organizationId,
+          projectId: member.projectId,
+          locationId: equipmentId,
+        },
+        include: { terminals: true },
+        orderBy: { id: "asc" },
+      }),
+      tx.cableAccess.findMany({
+        where: { organizationId, equipment: { projectId: member.projectId } },
+        orderBy: { id: "asc" },
+      }),
+      tx.diagramComponent.findMany({
+        where: { organizationId, equipmentId },
+        orderBy: { id: "asc" },
+      }),
+    ]);
+  const components = [
+    ...new Set([
+      ...represented.map((r) => r.assetId),
+      ...all.filter((a) => a.parentId === equipmentId).map((a) => a.id),
+    ]),
+  ];
   const accesses = saved.map((a) => ({
     ...a,
     end: a.end as "A" | "B" | "MID",
@@ -165,11 +227,13 @@ export async function readDiagram(
       coordinates: number[][];
     };
     let end: "A" | "B" | null =
-      linked?.kind === "FIBER_A"
+      cable.kind === "PATCHCORD" && cable.parentId === equipmentId
         ? "A"
-        : linked?.kind === "FIBER_B"
-          ? "B"
-          : null;
+        : linked?.kind === "FIBER_A"
+          ? "A"
+          : linked?.kind === "FIBER_B"
+            ? "B"
+            : null;
     if (!end && geometry.type === "LineString" && point.type === "Point") {
       const distance = (p: number[]) =>
         Math.hypot(
@@ -185,7 +249,9 @@ export async function readDiagram(
     }
     if (
       end &&
-      !associations.some((a) => a.cableId === cable.id && a.end === end)
+      !associations.some(
+        (a) => a.cableId === cable.id && (a.end === end || a.bothEnds),
+      )
     )
       accesses.push({
         id: `access:${equipmentId}:${cable.id}`,
@@ -195,6 +261,8 @@ export async function readDiagram(
         end,
         fraction: end === "A" ? 0 : 1,
         fiberStates: {},
+        bothEnds: cable.kind === "PATCHCORD",
+        remoteAssetId: null,
         ...{ proposed: true },
       });
   }
@@ -238,6 +306,11 @@ export async function readDiagram(
           identificationColor: t.identificationColor,
         })),
         associations,
+        represented,
+        adapterData: [equipment, ...all].map((a) => ({
+          id: a.id,
+          internalLinks: a.internalLinks,
+        })),
       }),
     )
     .digest("hex");
@@ -251,6 +324,8 @@ export async function readDiagram(
     })),
   });
   return {
+    components,
+    permissions: member.permissions,
     equipment: convert(equipment),
     assets: all.map(convert),
     accesses,
@@ -288,6 +363,103 @@ export async function saveDiagram(
         throw new ApiError(409, "Equipamento desativado.");
       const org = member.organizationId,
         assets = new Map(before.assets.map((a) => [a.id, a]));
+      for (const c of input.componentCreates) {
+        requirePermission(member, assetPermission(c.kind, "create"));
+        if (c.kind !== "PATCHCORD" && before.equipment.kind !== "POP")
+          throw new ApiError(400, "OLTs e DIOs devem ser instalados no POP.");
+        if (
+          assets.has(c.id) ||
+          (await tx.asset.findUnique({ where: { id: c.id } }))
+        )
+          throw new ApiError(409, "Identificador de componente já utilizado.");
+        if (
+          c.kind === "OLT" &&
+          c.slotCount &&
+          c.portsPerSlot &&
+          c.slotCount * c.portsPerSlot !== c.ports
+        )
+          throw new ApiError(
+            400,
+            "Quantidade de portas diferente da estrutura de slots.",
+          );
+        const parent = await tx.asset.findUniqueOrThrow({
+          where: { id: equipmentId },
+        });
+        const created = await createAsset(
+          tx,
+          member,
+          assetSchema.parse({
+            ...c,
+            status: "INSTALLED",
+            projectId: member.projectId,
+            parentId: equipmentId,
+            geometry: parent.geometry,
+            layerId: parent.layerId,
+            insertionLossDb: 0,
+          }),
+          {
+            id: c.id,
+            skipTerminals: true,
+            metadata: {
+              model: c.model ?? "",
+              chassis: c.chassis ?? "",
+              slotCount: c.slotCount ?? 1,
+              portsPerSlot: c.portsPerSlot ?? c.ports,
+            },
+          },
+        );
+        const diagramAsset = componentAsset(c);
+        if (diagramAsset.fibers.length)
+          await tx.fiberStrand.createMany({
+            data: diagramAsset.fibers.map((f) => ({ ...f, assetId: c.id })),
+          });
+        if (diagramAsset.terminals.length)
+          await tx.opticalTerminal.createMany({
+            data: diagramAsset.terminals.map((p) => ({
+              ...p,
+              kind: p.kind as "PON" | "DIO" | "FIBER_A" | "FIBER_B",
+              assetId: c.id,
+              organizationId: org,
+            })),
+          });
+        if (diagramAsset.internalLinks?.length)
+          await tx.internalLink.createMany({
+            data: diagramAsset.internalLinks.map((l) => ({
+              ...l,
+              assetId: c.id,
+              organizationId: org,
+            })),
+          });
+        assets.set(c.id, { ...created, ...diagramAsset });
+      }
+      const componentIds = new Set([
+        ...(before.components ?? []),
+        ...input.components,
+        ...input.componentCreates.map((c) => c.id),
+      ]);
+      for (const componentId of componentIds) {
+        const component = assets.get(componentId);
+        if (
+          !component ||
+          !["CUSTOMER", "OLT", "DIO", "SPLITTER", "PATCHCORD"].includes(
+            component.kind,
+          )
+        )
+          throw new ApiError(400, "Componente não pertence a este projeto.");
+        if (
+          ["OLT", "DIO", "SPLITTER", "PATCHCORD"].includes(component.kind) &&
+          component.parentId &&
+          component.parentId !== equipmentId
+        )
+          throw new ApiError(400, "Componente instalado em outro equipamento.");
+        if (component.kind === "CUSTOMER" && before.equipment.kind !== "CTO")
+          throw new ApiError(400, "Associe o cliente à CTO de atendimento.");
+        await tx.diagramComponent.upsert({
+          where: { equipmentId_assetId: { equipmentId, assetId: componentId } },
+          create: { organizationId: org, equipmentId, assetId: componentId },
+          update: {},
+        });
+      }
       const previousAccess = await tx.cableAccess.findMany({
         where: { equipmentId, organizationId: org },
       });
@@ -316,6 +488,25 @@ export async function saveDiagram(
         )
           throw new ApiError(400, "Cabo inválido ou repetido.");
         seenCables.add(a.cableId);
+        if (
+          a.bothEnds &&
+          !(
+            cable.kind === "PATCHCORD" ||
+            (cable.kind === "DROP" &&
+              a.remoteAssetId &&
+              componentIds.has(a.remoteAssetId) &&
+              assets.get(a.remoteAssetId)?.kind === "CUSTOMER")
+          )
+        )
+          throw new ApiError(
+            400,
+            "As duas pontas exigem cordão local ou drop vinculado a cliente existente.",
+          );
+        if (
+          a.remoteAssetId &&
+          (!a.bothEnds || assets.get(a.remoteAssetId)?.kind !== "CUSTOMER")
+        )
+          throw new ApiError(400, "Cliente remoto inválido.");
         if (
           (a.end === "A" && a.fraction !== 0) ||
           (a.end === "B" && a.fraction !== 1) ||
@@ -366,7 +557,11 @@ export async function saveDiagram(
         await tx.cableAccess.upsert({
           where: { id: a.id },
           create: { ...a, organizationId: org, equipmentId },
-          update: { fiberStates: a.fiberStates },
+          update: {
+            fiberStates: a.fiberStates,
+            bothEnds: a.bothEnds,
+            remoteAssetId: a.remoteAssetId,
+          },
         });
         const local = accessPorts(cable, a);
         if (a.end === "MID")
@@ -398,10 +593,18 @@ export async function saveDiagram(
       }
       for (const a of [
         before.equipment,
-        ...before.assets.filter((a) => a.kind === "SPLITTER"),
+        ...[...assets.values()].filter(
+          (a) => componentIds.has(a.id) && !cableKinds.includes(a.kind),
+        ),
       ])
         for (const p of a.terminals)
-          ports.set(p.id, { port: p, asset: a, state: "AVAILABLE" });
+          ports.set(p.id, {
+            port: p,
+            asset: a,
+            state:
+              a.internalLinks?.find((l) => l.aId === p.id || l.bId === p.id)
+                ?.status ?? "AVAILABLE",
+          });
       for (const s of input.splitters) {
         requirePermission(member, "equipment.create");
         if (
@@ -500,6 +703,22 @@ export async function saveDiagram(
           a.port.attachmentId === b.port.attachmentId &&
           a.port.fiberId === b.port.fiberId &&
           a.port.localSide !== b.port.localSide;
+          for (const endpoint of [a, b]) {
+            const access = input.accesses.find(
+              (x) => x.cableId === endpoint.asset.id,
+            );
+            if (
+              access?.remoteAssetId &&
+              endpoint.port.kind === `FIBER_${access.end === "A" ? "B" : "A"}`
+            ) {
+              const other = endpoint === a ? b : a;
+              if (other.asset.id !== access.remoteAssetId)
+                throw new ApiError(
+                  400,
+                  "A ponta remota do drop deve terminar no cliente vinculado.",
+                );
+            }
+          }
         if (!unchanged) {
           if (
             [a, b].some(
@@ -581,6 +800,7 @@ export async function saveDiagram(
           data: {
             id: link.id,
             organizationId: org,
+            projectId: member.projectId,
             locationId: equipmentId,
             kind: link.kind,
             tray: link.tray,
@@ -610,6 +830,7 @@ export async function saveDiagram(
           id: randomUUID(),
           organizationId: org,
           actorId: member.actorId,
+          projectId: member.projectId,
           action: "SAVE_OPTICAL_DIAGRAM",
           entityId: equipmentId,
           detail: {
@@ -618,8 +839,14 @@ export async function saveDiagram(
             connections: input.links,
             addedSplitters: input.splitters,
             portColors: input.portColors,
+            components: input.components,
+            componentCreates: input.componentCreates,
           },
         },
+      });
+      await tx.networkProject.updateMany({
+        where: { id: member.projectId, organizationId: org },
+        data: { updatedAt: new Date() },
       });
       return readDiagram(tx, member, equipmentId);
     },

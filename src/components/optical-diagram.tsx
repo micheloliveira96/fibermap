@@ -1,4 +1,10 @@
 "use client";
+import { useActiveProject, useProjectRequest } from "./project-context";
+import { RenameDialog, type RenameTarget } from "./rename-dialog";
+import { PortConfigDialog } from "./port-config-dialog";
+import { DiagramEquipmentPanel } from "./diagram-equipment-panel";
+import { assetPermission } from "@/lib/permissions";
+import { useProjectFetch } from "./project-context";
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import {
   ReactFlow,
@@ -37,6 +43,8 @@ import {
   endpointColor,
   endpointLabel,
   pairError,
+  componentAsset,
+  portDisplayLabel,
   type DiagramData,
   type DiagramDraft,
   type DiagramAsset,
@@ -61,6 +69,8 @@ type NodeData = {
   picked: string | null;
   onLayout: (id: string, patch: Partial<DiagramNodeLayout>) => void;
   onPort: (id: string) => void;
+  onRename: (asset: DiagramAsset) => void;
+  dropCodes: string[];
 };
 type OpticalNode = Node<NodeData, "optical">;
 const OpticalComponent = memo(function OpticalComponent({
@@ -70,7 +80,26 @@ const OpticalComponent = memo(function OpticalComponent({
 }: NodeProps<OpticalNode>) {
   const { asset, access, layout, used } = data,
     update = useUpdateNodeInternals();
-  const ports = access ? accessPorts(asset, access) : asset.terminals;
+  const rawPorts = access ? accessPorts(asset, access) : asset.terminals;
+  const adapters = [...(asset.internalLinks ?? [])].sort((a, b) =>
+    (asset.terminals.find((p) => p.id === a.aId)?.label ?? "").localeCompare(
+      asset.terminals.find((p) => p.id === b.aId)?.label ?? "",
+      undefined,
+      { numeric: true },
+    ),
+  );
+  const paired = new Set(adapters.flatMap((l) => [l.aId, l.bId]));
+  const ports = adapters.length
+    ? [
+        ...adapters
+          .flatMap((l) => [
+            rawPorts.find((p) => p.id === l.aId)!,
+            rawPorts.find((p) => p.id === l.bId)!,
+          ])
+          .filter(Boolean),
+        ...rawPorts.filter((p) => !paired.has(p.id)),
+      ]
+    : rawPorts;
   const tubes = [...new Set(asset.fibers.map((f) => f.tube))];
   const tube = tubes.includes(layout.tube) ? layout.tube : (tubes[0] ?? 1);
   const visible = access
@@ -82,9 +111,16 @@ const OpticalComponent = memo(function OpticalComponent({
   const shownIds = new Set(shown.map((p) => p.id));
   useEffect(() => {
     update(id);
-  }, [id, update, tube, layout.collapsed, ports.length, used]);
+  }, [id, update, tube, layout.collapsed, ports.length, used, asset]);
   return (
-    <div className={`od-node ${selected ? "od-selected" : ""}`}>
+    <div
+      className={`od-node ${selected ? "od-selected" : ""}`}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        data.onRename(asset);
+      }}
+    >
       <header>
         <span className="od-node-icon">
           {access ? <Cable size={18} /> : <GitFork size={18} />}
@@ -104,7 +140,7 @@ const OpticalComponent = memo(function OpticalComponent({
       <div className="od-node-summary">
         {access
           ? `${asset.fibers.length} fibras · ${tubes.length} tubos · ${access.end === "MID" ? `Sangria ${Math.round(access.fraction * 100)}%` : "Ponta " + access.end}`
-          : `${ports.filter((p) => p.kind === "SPLITTER_IN").length ? "Splitter" : "Terminações"} · ${ports.length} portas`}
+          : `${adapters.length ? `${asset.kind === "CTO" ? "Acopladores" : "Adaptadores"} · ${adapters.length} pares IN/OUT` : ports.filter((p) => p.kind === "SPLITTER_IN").length ? `Splitter · ${ports.length} portas` : asset.kind === "OLT" ? `OLT · ${ports.length} portas PON` : asset.kind === "POP" ? "Infraestrutura interna do POP" : `Terminações · ${ports.length} portas`}`}
       </div>
       {!layout.collapsed && access && (
         <div className="od-tube nodrag">
@@ -130,18 +166,46 @@ const OpticalComponent = memo(function OpticalComponent({
       {!layout.collapsed && (
         <div className="od-fiber-list">
           {shown.map((p) => {
+            const adapter = adapters.find(
+              (l) => l.aId === p.id || l.bId === p.id,
+            );
             const fiber = asset.fibers.find((f) => f.id === p.fiberId),
               state = fiber
                 ? fiber.status !== "AVAILABLE"
                   ? fiber.status
                   : (access?.fiberStates[fiber.id] ?? "AVAILABLE")
-                : "AVAILABLE";
+                : (adapter?.status ?? "AVAILABLE");
             const color = endpointColor({ port: p, asset, access });
             return (
               <div
                 key={p.id}
                 className={`od-port ${data.picked === p.id ? "od-picked" : ""}`}
               >
+                {adapter?.aId === p.id && (
+                  <div className="od-adapter-heading">
+                    <b>{portDisplayLabel(asset, p).split(" · ")[0]}</b>
+                    <small>
+                      {adapter.status !== "AVAILABLE"
+                        ? statusLabel[adapter.status]
+                        : [adapter.aId, adapter.bId].filter(
+                              (id) =>
+                                used.has(id) ||
+                                asset.terminals.find((p) => p.id === id)
+                                  ?.occupied,
+                            ).length === 2
+                          ? "Conectado"
+                          : [adapter.aId, adapter.bId].some(
+                                (id) =>
+                                  used.has(id) ||
+                                  asset.terminals.find((p) => p.id === id)
+                                    ?.occupied,
+                              )
+                            ? "Parcialmente conectado"
+                            : "Disponível"}
+                    </small>
+                    <span>Continuidade interna IN ↔ OUT</span>
+                  </div>
+                )}
                 <Handle
                   id={p.id}
                   type="source"
@@ -152,18 +216,32 @@ const OpticalComponent = memo(function OpticalComponent({
                 <button
                   className="nodrag"
                   onClick={() => data.onPort(p.id)}
-                  title={`${p.label}${fiber ? ` · ${fiber.color} · ${statusLabel[state]}` : ""}${p.occupied ? " · ocupada em outro local" : ""}`}
+                  title={`${portDisplayLabel(asset, p)}${fiber ? ` · ${fiber.color} · ${statusLabel[state]}` : ""}${p.occupied ? " · ocupada em outro local" : ""}`}
                 >
                   <i style={{ background: color }} />
                   <b>
-                    {fiber ? String(fiber.number).padStart(3, "0") : p.label}
+                    {fiber
+                      ? `${String(fiber.number).padStart(3, "0")}${access?.bothEnds ? `/${p.kind === "FIBER_A" ? "A" : "B"}` : ""}`
+                      : adapter
+                        ? adapter.aId === p.id
+                          ? "IN — Entrada"
+                          : "OUT — Saída"
+                        : portDisplayLabel(asset, p)}
                   </b>
                   <span>
                     {fiber
                       ? `${fiber.color}${p.localSide ? ` · ${p.localSide === "IN" ? "chegada" : "continuação"}` : ""}`
-                      : p.kind === "SPLITTER_IN"
-                        ? "Entrada"
-                        : "Saída"}
+                      : adapter
+                        ? ""
+                        : p.kind === "SPLITTER_IN"
+                          ? "Entrada"
+                          : p.kind === "SPLITTER_OUT"
+                            ? "Saída"
+                            : p.kind === "PON"
+                              ? "PON"
+                              : p.kind === "CUSTOMER"
+                                ? "Terminação do cliente"
+                                : "Porta óptica"}
                   </span>
                   <em>
                     {p.occupied
@@ -207,6 +285,14 @@ const OpticalComponent = memo(function OpticalComponent({
             />
           </span>
         ))}
+      {asset.kind === "CUSTOMER" && (
+        <footer>
+          Drop: {data.dropCodes.join(", ") || "aguardando vínculo"} ·{" "}
+          {ports.some((p) => used.has(p.id) || p.occupied)
+            ? "Conectado"
+            : "Disponível"}
+        </footer>
+      )}
       {layout.collapsed && (
         <p className="od-collapsed">Grupo recolhido · conexões preservadas</p>
       )}
@@ -234,6 +320,8 @@ const layoutFor = (
   };
 const initialDraft = (data: DiagramData): DiagramDraft => ({
   portColors: {},
+  components: data.components ?? [],
+  componentCreates: [],
   accesses: data.accesses,
   splitters: [],
   links: data.connections,
@@ -250,6 +338,16 @@ export default function OpticalDiagram({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const fetch = useProjectFetch(),
+    request = useProjectRequest(),
+    activeProject = useActiveProject();
+  const [rename, setRename] = useState<RenameTarget | null>(null),
+    [portConfig, setPortConfig] = useState<DiagramAsset | null>(null);
+  const [recoverable, setRecoverable] = useState<{
+    draft: DiagramDraft;
+    revision: string;
+  } | null>(null);
+  const recoveryKey = `fibermap-optical-draft:${activeProject.actorId}:${activeProject.organizationId}:${activeProject.id}:${equipmentId}`;
   const [data, setData] = useState<DiagramData | null>(null),
     [history, setHistory] = useState<{
       past: DiagramDraft[];
@@ -314,6 +412,10 @@ export default function OpticalDiagram({
         const value = await r.json();
         if (!r.ok) throw Error(value.error);
         setData(value);
+        try {
+          const raw = sessionStorage.getItem(recoveryKey);
+          if (raw) setRecoverable(JSON.parse(raw));
+        } catch {}
         const d = initialDraft(value);
         setHistory({ past: [], present: d, future: [] });
         setBaseline(JSON.stringify(d));
@@ -322,7 +424,7 @@ export default function OpticalDiagram({
         if (e.name !== "AbortError") setError(e.message);
       });
     return () => controller.abort();
-  }, [equipmentId]);
+  }, [equipmentId, fetch, recoveryKey]);
   useEffect(() => {
     if (!dirty) return;
     const before = (e: BeforeUnloadEvent) => {
@@ -331,20 +433,36 @@ export default function OpticalDiagram({
     window.addEventListener("beforeunload", before);
     return () => window.removeEventListener("beforeunload", before);
   }, [dirty]);
+  useEffect(() => {
+    if (!dirty || !draft || !data) return;
+    try {
+      sessionStorage.setItem(
+        recoveryKey,
+        JSON.stringify({ draft, revision: data.revision }),
+      );
+    } catch {
+      /* The editor still reports pending state if local storage is unavailable. */
+    }
+  }, [dirty, draft, data, recoveryKey]);
   const close = () => {
     if (saving) return;
     if (
       !dirty ||
       window.confirm("Descartar as alterações não salvas do diagrama?")
-    )
+    ) {
+      try {
+        sessionStorage.removeItem(recoveryKey);
+      } catch {}
       onClose();
+    }
   };
-  const allAssets = useMemo(
+  const allAssets = useMemo<DiagramAsset[]>(
     () =>
       data && draft
         ? [
             data.equipment,
             ...data.assets,
+            ...(draft.componentCreates ?? []).map(componentAsset),
             ...draft.splitters.map((s) => ({
               id: s.id,
               name: s.name,
@@ -375,7 +493,9 @@ export default function OpticalDiagram({
         ? allAssets.filter(
             (a) =>
               a.id === equipmentId ||
-              a.kind === "SPLITTER" ||
+              draft.splitters.some((s) => s.id === a.id) ||
+              (draft.components ?? []).includes(a.id) ||
+              (draft.componentCreates ?? []).some((c) => c.id === a.id) ||
               draft.accesses.some((s) => s.cableId === a.id),
           )
         : [],
@@ -484,6 +604,17 @@ export default function OpticalDiagram({
       setError((e as Error).message);
     }
   }
+  const openRename = (asset: DiagramAsset) => {
+    if (
+      !data?.permissions?.includes(assetPermission(asset.kind, "edit")) &&
+      !draft?.componentCreates?.some((c) => c.id === asset.id) &&
+      !draft?.splitters.some((c) => c.id === asset.id)
+    ) {
+      setError("Seu perfil não permite renomear este componente.");
+      return;
+    }
+    setRename({ id: asset.id, name: asset.name, version: asset.version ?? 1 });
+  };
   const onPort = (id: string) => {
     setPicked(id);
     setSelectedLink(null);
@@ -511,6 +642,12 @@ export default function OpticalDiagram({
       picked,
       onLayout: changeLayout,
       onPort,
+      onRename: openRename,
+      dropCodes: (draft?.accesses ?? [])
+        .filter((a) => a.remoteAssetId === asset.id)
+        .map(
+          (a) => allAssets.find((x) => x.id === a.cableId)?.code ?? a.cableId,
+        ),
     },
   }));
   const edges: Edge[] = (draft?.links ?? []).flatMap((l) => {
@@ -568,6 +705,10 @@ export default function OpticalDiagram({
       });
       const value = await r.json();
       if (!r.ok) throw Error(value.error);
+      try {
+        sessionStorage.removeItem(recoveryKey);
+      } catch {}
+      setRecoverable(null);
       setData(value);
       const d = initialDraft(value);
       setHistory({ past: [], present: d, future: [] });
@@ -590,6 +731,7 @@ export default function OpticalDiagram({
       end,
       fraction: end === "A" ? 0 : end === "B" ? 1 : fraction / 100,
       fiberStates: {},
+      bothEnds: asset.kind === "PATCHCORD",
     };
     if (
       end === "MID" &&
@@ -687,6 +829,49 @@ export default function OpticalDiagram({
       aria-modal="true"
       aria-label="Diagrama Óptico"
     >
+      {recoverable && data && (
+        <div className="od-recovery">
+          <span>
+            Há uma montagem pendente nesta aba.
+            {recoverable.revision !== data.revision
+              ? " A rede mudou; compare o rascunho antes de reaplicar."
+              : ""}
+          </span>
+          <button
+            disabled={recoverable.revision !== data.revision || !editable}
+            onClick={() => {
+              commit(() => recoverable.draft);
+              setRecoverable(null);
+            }}
+          >
+            Recuperar montagem
+          </button>
+          <button
+            onClick={() => {
+              const url = URL.createObjectURL(
+                new Blob([JSON.stringify(recoverable, null, 2)], {
+                  type: "application/json",
+                }),
+              );
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "fibermap-montagem-pendente.json";
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            Baixar rascunho
+          </button>
+          <button
+            onClick={() => {
+              sessionStorage.removeItem(recoveryKey);
+              setRecoverable(null);
+            }}
+          >
+            Descartar
+          </button>
+        </div>
+      )}
       <header className="od-topbar">
         <div className="od-title">
           <span className="od-brand">
@@ -857,6 +1042,20 @@ export default function OpticalDiagram({
               Nenhum cabo associado. Selecione um cabo existente abaixo ou feche
               o diagrama e cadastre o cabo usando as ferramentas do mapa.
             </div>
+          )}
+          {editable && draft && data && (
+            <DiagramEquipmentPanel
+              equipment={data.equipment}
+              assets={allAssets.filter((a) => a.id !== equipmentId)}
+              draft={draft}
+              commit={commit}
+              onError={setError}
+              canCreate={Boolean(
+                data.permissions?.some(
+                  (p) => p === "equipment.create" || p === "cable.create",
+                ),
+              )}
+            />
           )}
           {editable && (
             <>
@@ -1157,6 +1356,32 @@ export default function OpticalDiagram({
               clique na segunda extremidade.
             </div>
           )}
+          {selectedNodes.length === 1 &&
+            allAssets.find((a) => a.id === selectedNodes[0]) &&
+            (() => {
+              const asset = allAssets.find((a) => a.id === selectedNodes[0])!;
+              return (
+                <section className="od-component-properties">
+                  <h3>{asset.code}</h3>
+                  <p>{asset.name}</p>
+                  <button
+                    disabled={!editable}
+                    onClick={() => openRename(asset)}
+                  >
+                    Renomear
+                  </button>
+                  {["OLT", "DIO", "CTO"].includes(asset.kind) &&
+                    asset.version && (
+                      <button
+                        disabled={!editable}
+                        onClick={() => setPortConfig(asset)}
+                      >
+                        Configurar portas
+                      </button>
+                    )}
+                </section>
+              );
+            })()}
           {selected ? (
             <>
               <h3>
@@ -1212,6 +1437,76 @@ export default function OpticalDiagram({
               <h3>
                 {chosen.asset.code} · {chosen.port.label}
               </h3>
+              {chosen.asset.internalLinks
+                ?.filter(
+                  (l) => l.aId === chosen.port.id || l.bId === chosen.port.id,
+                )
+                .map((adapter) => (
+                  <section className="od-adapter-properties" key={adapter.id}>
+                    <p>{portDisplayLabel(chosen.asset, chosen.port)}</p>
+                    <small>
+                      Continuidade interna do acoplador; não é uma fusão.
+                    </small>
+                    <button
+                      disabled={!editable}
+                      onClick={() =>
+                        setRename({
+                          id: adapter.id,
+                          name:
+                            adapter.name ??
+                            portDisplayLabel(chosen.asset, chosen.port).split(
+                              " · ",
+                            )[0],
+                          version: adapter.version ?? 1,
+                          adapter: true,
+                        })
+                      }
+                    >
+                      Renomear acoplador
+                    </button>
+                    <label>
+                      Estado do acoplador
+                      <select
+                        disabled={!editable}
+                        value={adapter.status}
+                        onChange={(e) => {
+                          const status = e.target.value;
+                          if (
+                            status !== "AVAILABLE" &&
+                            (used.has(adapter.aId) || used.has(adapter.bId))
+                          ) {
+                            setError(
+                              "Remova as conexões das duas portas antes de reservar.",
+                            );
+                            return;
+                          }
+                          void request(
+                            `/api/adapters/${adapter.id}`,
+                            {
+                              status,
+                              version: adapter.version,
+                              diagramId: equipmentId,
+                              revision: data?.revision,
+                            },
+                            "PATCH",
+                          )
+                            .then((value) => {
+                              setData(value.diagram);
+                              onSaved();
+                            })
+                            .catch((e) => setError(e.message));
+                        }}
+                      >
+                        <option value="AVAILABLE">
+                          Disponível para conexão
+                        </option>
+                        <option value="RESERVED">Reservado</option>
+                        <option value="DAMAGED">Interrompido</option>
+                        <option value="BLOCKED">Bloqueado</option>
+                      </select>
+                    </label>
+                  </section>
+                ))}
               <p>Cor de identificação da porta</p>
               <label>
                 Cor
@@ -1339,6 +1634,44 @@ export default function OpticalDiagram({
           </button>
         </aside>
       </div>
+      {rename && (
+        <RenameDialog
+          target={rename}
+          diagramId={equipmentId}
+          revision={data?.revision}
+          onClose={() => setRename(null)}
+          onSaved={(value) => {
+            if (value.diagram) setData(value.diagram);
+            onSaved();
+          }}
+          onSubmit={
+            draft?.componentCreates?.some((c) => c.id === rename.id) ||
+            draft?.splitters.some((c) => c.id === rename.id)
+              ? async (name) => {
+                  commit((d) => {
+                    const component =
+                      d.componentCreates?.find((c) => c.id === rename.id) ??
+                      d.splitters.find((c) => c.id === rename.id);
+                    if (component) component.name = name;
+                    return d;
+                  });
+                }
+              : undefined
+          }
+        />
+      )}
+      {portConfig && data && (
+        <PortConfigDialog
+          asset={portConfig}
+          diagramId={equipmentId}
+          revision={data.revision}
+          onClose={() => setPortConfig(null)}
+          onSaved={(value) => {
+            if (value.diagram) setData(value.diagram);
+            onSaved();
+          }}
+        />
+      )}
       {pending && (
         <div className="od-confirm-backdrop">
           <section

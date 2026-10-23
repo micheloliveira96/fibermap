@@ -25,6 +25,9 @@ type Props = {
   onGeometry: (g: MapGeometry) => void;
   onVertex: (path: number[]) => void;
   onCoordinate: (at: Coordinate) => void;
+  initialCamera?: {lng:number;lat:number;zoom:number};
+  onViewport?: (camera:{lng:number;lat:number;zoom:number})=>void;
+  onContextMenu?: (asset:EditorAsset,point:{x:number;y:number})=>void;
 };
 const empty: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
@@ -114,8 +117,8 @@ export default function EditorMap(props: Props) {
     const m = new ml.Map({
       container: host.current,
       style: props.styleUrl,
-      center: [-46.6333, -23.5505],
-      zoom: 11,
+      center: props.initialCamera ? [props.initialCamera.lng,props.initialCamera.lat] : [-46.6333, -23.5505],
+      zoom: props.initialCamera?.zoom ?? 11,
     });
     map.current = m;
     m.addControl(new ml.NavigationControl(), "bottom-right");
@@ -526,6 +529,8 @@ export default function EditorMap(props: Props) {
       } else if (s.mode !== "edit" && e.originalEvent.detail < 2)
         s.onClick([e.lngLat.lng, e.lngLat.lat]);
     });
+    m.on("moveend",()=>{const center=m.getCenter();state.current.onViewport?.({lng:center.lng,lat:center.lat,zoom:m.getZoom()});});
+    m.on("contextmenu",e=>{if(!m.getLayer("points"))return;const f=m.queryRenderedFeatures(e.point,{layers:["points","lines","areas"]})[0];const asset=state.current.assets.find(a=>a.id===f?.properties?.id);if(asset){e.preventDefault();state.current.onContextMenu?.(asset,{x:e.originalEvent.clientX,y:e.originalEvent.clientY});}});
     m.on("dblclick", (e) => {
       if (["line", "polygon", "measure"].includes(state.current.mode)) {
         e.preventDefault();
