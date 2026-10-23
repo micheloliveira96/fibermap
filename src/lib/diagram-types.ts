@@ -135,6 +135,7 @@ export const fiberColor: Record<string, string> = {
   Violeta: "#a276ed",
   Rosa: "#f48fbc",
   Turquesa: "#29cfce",
+  Aqua: "#29cfce",
 };
 export const statusLabel: Record<LocalStatus, string> = {
   AVAILABLE: "Disponível",

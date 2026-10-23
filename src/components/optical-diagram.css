@@ -241,6 +241,11 @@
   outline-offset: 3px;
 }
 .od-node header {
+  height: auto;
+  min-height: 0;
+  border-bottom: 0;
+  background: var(--od-node);
+  color: var(--od-text);
   padding: 13px 12px 8px;
   display: flex;
   align-items: center;
