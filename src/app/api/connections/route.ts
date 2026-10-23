@@ -58,11 +58,21 @@ export async function POST(request: Request) {
             where: {
               id: data.locationId,
               organizationId: member.organizationId,
-              kind: { in: ["CLOSURE", "CTO", "POP"] },
+              kind: { in: ["CLOSURE", "CTO", "POP", "DIO"] },
             },
           }))
         )
           throw new ApiError(400, "Local da conexão inválido.");
+        for (const terminal of terminals) {
+          const attachment = terminal.attachmentId
+            ? await tx.cableAccess.findUnique({where:{id:terminal.attachmentId}})
+            : terminal.fiberId ? await tx.cableAccess.findFirst({where:{cableId:terminal.assetId,end:terminal.kind==="FIBER_A"?"A":"B",organizationId:member.organizationId}}) : null;
+          if (attachment && attachment.equipmentId !== data.locationId)
+            throw new ApiError(409,"A extremidade pertence a outra caixa. Abra seu Diagrama Óptico.");
+          const localStates=attachment?.fiberStates as Record<string,string>|undefined;
+          if(terminal.fiberId && localStates?.[terminal.fiberId] && localStates[terminal.fiberId]!=="AVAILABLE")
+            throw new ApiError(409,"Fibra indisponível neste acesso físico.");
+        }
         const connection = await tx.networkConnection.create({
           data: {
             organizationId: member.organizationId,
@@ -70,6 +80,7 @@ export async function POST(request: Request) {
             locationId: data.locationId,
             tray: data.tray,
             lossDb: data.lossDb,
+            actorId: member.actorId,
           },
         });
         await tx.connectionTerminal.createMany({

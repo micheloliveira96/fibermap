@@ -23,6 +23,8 @@ export async function GET() {
           })),
           assets: await tx.asset.findMany({ where, include: inventoryInclude }),
           internalLinks: await tx.internalLink.findMany({ where }),
+          opticalDiagrams: await tx.opticalDiagram.findMany({ where }),
+          cableAccesses: await tx.cableAccess.findMany({ where }),
           connections: await tx.networkConnection.findMany({
             where,
             include: { terminals: true },

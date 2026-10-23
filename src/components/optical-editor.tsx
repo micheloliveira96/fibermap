@@ -45,6 +45,7 @@ const Map = dynamic(() => import("./editor-map"), {
   ssr: false,
   loading: () => <div className="editor-loading">Carregando cartografia…</div>,
 });
+const OpticalDiagram = dynamic(() => import("./optical-diagram"), { ssr: false });
 const initial: MapData = {
   role: "VIEWER",
   projects: [],
@@ -129,6 +130,7 @@ function download(
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export default function OpticalEditor() {
+  const [diagramId, setDiagramId] = useState<string | null>(null);
   const [assets, setAssets] = useState<EditorAsset[]>([]),
     [meta, setMeta] = useState(initial),
     [project, setProject] = useState(""),
@@ -1181,6 +1183,11 @@ export default function OpticalEditor() {
                 <PanelRightClose size={20} />
               </button>
             </div>
+            {selected && ["CTO", "CLOSURE", "DIO"].includes(selected.kind) && (
+              <button className="editor-primary" style={{ margin: "8px 16px", width: "calc(100% - 32px)" }} onClick={() => { if (ensureDiscard()) setDiagramId(selected.id); }}>
+                <Network size={17} /> Diagrama Óptico
+              </button>
+            )}
             <div className="editor-tabs">
               {[
                 ["properties", "Propriedades"],
@@ -2272,6 +2279,7 @@ export default function OpticalEditor() {
           </section>
         </div>
       )}
+      {diagramId && <OpticalDiagram equipmentId={diagramId} onClose={() => setDiagramId(null)} onSaved={() => { void load().catch(e => setNotice(e.message)); }} />}
       {!!preview.length && !importOpen && (
         <button
           className="editor-review-import"

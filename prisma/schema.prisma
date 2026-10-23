@@ -227,6 +227,9 @@ model Asset {
   parent Asset? @relation("AssetContainer", fields: [parentId, organizationId], references: [id, organizationId], onDelete: Restrict)
   children Asset[] @relation("AssetContainer")
   locatedConnections NetworkConnection[]
+  opticalDiagram OpticalDiagram?
+  cableAccesses CableAccess[] @relation("AccessEquipment")
+  equipmentAccesses CableAccess[] @relation("AccessCable")
   version Int @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -333,6 +336,10 @@ model OpticalTerminal {
   fiber FiberStrand? @relation(fields: [fiberId, assetId], references: [id, assetId], onDelete: Restrict)
   label String
   kind TerminalKind
+  attachmentId String?
+  attachment CableAccess? @relation(fields: [attachmentId, assetId, organizationId], references: [id, cableId, organizationId], onDelete: Restrict)
+  routePosition Float?
+  localSide String?
   links ConnectionTerminal[]
   internalA InternalLink[] @relation("InternalA")
   internalB InternalLink[] @relation("InternalB")
@@ -366,9 +373,34 @@ model NetworkConnection {
   tray String?
   lossDb Float @default(0)
   createdAt DateTime @default(now())
+  actorId String?
   terminals ConnectionTerminal[]
   @@unique([id, organizationId])
   @@index([locationId, organizationId])
+}
+model OpticalDiagram {
+  equipmentId String @id
+  organizationId String
+  equipment Asset @relation(fields: [equipmentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  version Int @default(1)
+  layout Json @default("{}")
+  updatedAt DateTime @updatedAt
+  @@unique([equipmentId, organizationId])
+}
+model CableAccess {
+  id String @id
+  organizationId String
+  equipmentId String
+  cableId String
+  equipment Asset @relation("AccessEquipment", fields: [equipmentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  cable Asset @relation("AccessCable", fields: [cableId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  end String
+  fraction Float
+  fiberStates Json @default("{}")
+  terminals OpticalTerminal[]
+  @@unique([equipmentId, cableId])
+  @@unique([id, cableId, organizationId])
+  @@index([organizationId, cableId])
 }
 model ConnectionTerminal {
   terminalId String @id

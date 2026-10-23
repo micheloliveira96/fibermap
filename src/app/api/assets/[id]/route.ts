@@ -100,6 +100,8 @@ export async function DELETE(r: Request, c: Context) {
           "Elemento inexistente ou alterado. Recarregue.",
         );
       requirePermission(m,assetPermission(a.kind,"delete"));
+      if (await tx.cableAccess.count({where:{organizationId:m.organizationId,OR:[{equipmentId:id},{cableId:id}]}}) || await tx.opticalDiagram.count({where:{equipmentId:id,organizationId:m.organizationId}}))
+        throw new ApiError(409,"Este elemento possui uma montagem óptica salva. Preserve seus acessos físicos antes de excluir.");
       const locked = await tx.asset.updateMany({
         where: { id, organizationId: m.organizationId, version },
         data: { version: { increment: 1 } },

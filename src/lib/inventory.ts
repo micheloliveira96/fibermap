@@ -28,7 +28,7 @@ export async function validatePlacement(
     });
     if (
       !parent ||
-      !["CTO", "CLOSURE", "POP"].includes(parent.kind) ||
+      !["CTO", "CLOSURE", "POP", ...(data.kind === "SPLITTER" ? ["DIO"] : [])].includes(parent.kind) ||
       !["SPLITTER", "OLT", "DIO"].includes(data.kind ?? "")
     )
       throw new ApiError(
@@ -71,7 +71,7 @@ export async function createAsset(
   tx: Prisma.TransactionClient,
   member: { organizationId: string; actorId: string },
   data: AssetInput,
-  extra: { importBatchId?: string; metadata?: Prisma.InputJsonObject } = {},
+  extra: { id?: string; importBatchId?: string; metadata?: Prisma.InputJsonObject } = {},
 ) {
   if (!compatible(data.kind, data.geometry))
     throw new ApiError(400, "Tipo incompatível com a geometria.");
@@ -95,6 +95,7 @@ export async function createAsset(
   const asset = await tx.asset.create({
     data: {
       ...fields,
+      id: extra.id,
       installedAt: fields.installedAt ? new Date(fields.installedAt) : null,
       organizationId: member.organizationId,
       importBatchId: extra.importBatchId,

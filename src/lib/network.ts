@@ -3,7 +3,7 @@ export function strands(count: number, pattern = colors) {
   if (!Number.isInteger(count) || count < 1 || count > 2880 || !pattern.length) throw new Error('Capacidade inválida');
   return Array.from({ length: count }, (_, i) => ({ number: i + 1, tube: Math.floor(i / pattern.length) + 1, color: pattern[i % pattern.length], tubeColor: pattern[Math.floor(i / pattern.length) % pattern.length] }));
 }
-export type Node = { id: string; label: string; kind: string; assetId: string; fiberId?: string | null };
+export type Node = { id: string; label: string; kind: string; assetId: string; fiberId?: string | null; attachmentId?: string | null; routePosition?: number | null; localSide?: string | null };
 export type Edge = { a: string; b: string; kind: string; lossDb: number };
 export function trace(start: string, nodes: Node[], edges: Edge[]) {
   const byId = new Map(nodes.map(n => [n.id, n]));
@@ -27,7 +27,14 @@ export function graph(assets: { id: string; metadata: unknown }[], nodes: Node[]
   edges.push(...internal.map(link => ({ a: link.aId, b: link.bId, kind: 'ADAPTER', lossDb: 0 })));
   const fibers = new Map<string, Node[]>();
   for (const n of nodes) if (n.fiberId) fibers.set(n.fiberId, [...(fibers.get(n.fiberId) ?? []), n]);
-  for (const pair of fibers.values()) if (pair.length === 2) edges.push({ a: pair[0].id, b: pair[1].id, kind: 'FIBER', lossDb: 0 });
+  for (const pair of fibers.values()) {
+    const a=pair.find(n=>!n.attachmentId&&n.kind==='FIBER_A'), b=pair.find(n=>!n.attachmentId&&n.kind==='FIBER_B');
+    if(!a||!b) continue;
+    const accesses=[...new Set(pair.flatMap(n=>n.attachmentId?[n.attachmentId]:[]))].map(id=>({incoming:pair.find(n=>n.attachmentId===id&&n.localSide==='IN'),outgoing:pair.find(n=>n.attachmentId===id&&n.localSide==='OUT')})).sort((x,y)=>(x.incoming?.routePosition??0)-(y.incoming?.routePosition??0));
+    let previous=a;
+    for(const access of accesses) {if(!access.incoming||!access.outgoing) continue;edges.push({a:previous.id,b:access.incoming.id,kind:'FIBER',lossDb:0});previous=access.outgoing;}
+    edges.push({a:previous.id,b:b.id,kind:'FIBER',lossDb:0});
+  }
   for (const asset of assets) {
     const input = nodes.filter(n => n.assetId === asset.id && n.kind === 'SPLITTER_IN');
     const output = nodes.filter(n => n.assetId === asset.id && n.kind === 'SPLITTER_OUT');
