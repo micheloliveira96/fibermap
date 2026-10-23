@@ -1,0 +1,22 @@
+.help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  font:
+    600 12px/1.2 Arial,
+    sans-serif;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+.help:hover,
+.help:focus-visible {
+  opacity: 1;
+  background: #148b8820;
+  outline-offset: 3px;
+}

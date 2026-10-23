@@ -340,6 +340,7 @@ model OpticalTerminal {
   attachment CableAccess? @relation(fields: [attachmentId, assetId, organizationId], references: [id, cableId, organizationId], onDelete: Restrict)
   routePosition Float?
   localSide String?
+  identificationColor String?
   links ConnectionTerminal[]
   internalA InternalLink[] @relation("InternalA")
   internalB InternalLink[] @relation("InternalB")

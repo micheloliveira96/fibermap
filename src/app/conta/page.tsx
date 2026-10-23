@@ -1,4 +1,5 @@
 "use client";
+import { HelpLink } from "@/components/help-link";
 import { useRouter } from "next/navigation";
 
 import { useEffect, useState } from "react";
@@ -27,6 +28,7 @@ export default function Account() {
     <main className="login">
       <section>
         <h1>Minha conta FiberMap</h1>
+        <HelpLink />
         {!data ? (
           <p>Carregando…</p>
         ) : (

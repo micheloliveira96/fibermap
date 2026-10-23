@@ -1,6 +1,7 @@
 import "dotenv/config";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { hashPassword } from "better-auth/crypto";
 import { db } from "../src/lib/db";
 import { graph } from "../src/lib/network";
@@ -10,6 +11,7 @@ import {
   splitterPorts,
   type DiagramData,
   type DiagramDraft,
+  endpointColor,
 } from "../src/lib/diagram-types";
 const base = process.env.TEST_API_URL;
 if (!base || !/^http:\/\/localhost:\d+$/.test(base))
@@ -91,12 +93,24 @@ try {
     data: { userId: user, organizationId: org, role: "ADMIN" },
   });
   assert.equal((await call("/api/diagrams/none")).status, 401);
+  assert.equal((await call("/api/help/manual")).status, 401);
   const login = await call("/api/auth/sign-in/email", { email, password });
   assert.equal(login.status, 200, await login.clone().text());
   cookie = login.headers
     .getSetCookie()
     .map((c) => c.split(";")[0])
     .join("; ");
+  const manual = await call("/api/help/manual");
+  assert.equal(manual.status, 200);
+  assert.equal(manual.headers.get("content-type"), "application/pdf");
+  assert.match(manual.headers.get("content-disposition")!, /^inline;/);
+  assert.deepEqual(
+    Buffer.from(await manual.arrayBuffer()),
+    await readFile("resources/Manual_FiberMap.pdf"),
+  );
+  const download = await call("/api/help/manual?download=1");
+  assert.match(download.headers.get("content-disposition")!, /^attachment;/);
+  assert.equal((await call("/ajuda")).status, 200);
   const point = { type: "Point", coordinates: [-46.63, -23.55] };
   const create = (code: string, kind: string, geometry: unknown, extra = {}) =>
     ok(
@@ -384,6 +398,114 @@ try {
   current = firstState;
   const dioState: DiagramData = await ok(`/api/diagrams/${dio.id}`);
   assert.equal(dioState.equipment.terminals.length, 16);
+  current = await ok(`/api/diagrams/${box.id}`);
+  // Multi-splitter batches preserve old links and port IDs; colors are endpoint data.
+  const originalConnections = structuredClone(current.connections);
+  const extraSplitters = [randomUUID(), randomUUID(), randomUUID()];
+  d = draft();
+  for (const [i, splitter] of extraSplitters.entries()) {
+    d.splitters.push({
+      id: splitter,
+      code: `SPL-BATCH-${i}`,
+      name: `Lote ${i}`,
+      ports: [8, 4, 2][i],
+    });
+    d.links.push({
+      id: randomUUID(),
+      a: getPort(a.id, 14 + i),
+      b: splitterPorts(splitter, [8, 4, 2][i])[0].id,
+      kind: "PATCH",
+      tray: "Lote de entradas",
+    });
+    d.links.push({
+      id: randomUUID(),
+      a: splitterPorts(splitter, [8, 4, 2][i])[1].id,
+      b: getPort(b.id, 14 + i),
+      kind: "PATCH",
+      tray: "Lote de saídas",
+    });
+  }
+  const colorPort = `${extraSplitters[0]}:in`;
+  d.portColors = { [colorPort]: "#aa3344" };
+  await save(box.id, d);
+  for (const existing of originalConnections)
+    assert.deepEqual(
+      current.connections.find((c) => c.id === existing.id),
+      existing,
+    );
+  let identified = current.assets
+    .find((x) => x.id === extraSplitters[0])!
+    .terminals.find((p) => p.id === colorPort)!;
+  assert.equal(identified.identificationColor, "#aa3344");
+  const count = current.connections.length;
+  d = draft();
+  d.links.push({
+    id: randomUUID(),
+    a: getPort(a.id, 20),
+    b: `${extraSplitters[1]}:out:2`,
+    kind: "PATCH",
+    tray: "Livre mas deve reverter",
+  });
+  d.links.push({
+    id: randomUUID(),
+    a: getPort(a.id, 21),
+    b: colorPort,
+    kind: "PATCH",
+    tray: "Ocupada",
+  });
+  d.portColors = { [colorPort]: "#bb5566" };
+  await save(box.id, d, 409);
+  current = await ok(`/api/diagrams/${box.id}`);
+  assert.equal(current.connections.length, count);
+  assert.equal(
+    current.assets
+      .find((x) => x.id === extraSplitters[0])!
+      .terminals.find((p) => p.id === colorPort)!.identificationColor,
+    "#aa3344",
+  );
+  d = draft();
+  d.portColors = { [a1]: "#123456" };
+  await save(box.id, d, 400);
+  d = draft();
+  d.portColors = { [colorPort]: null };
+  await save(box.id, d);
+  identified = current.assets
+    .find((x) => x.id === extraSplitters[0])!
+    .terminals.find((p) => p.id === colorPort)!;
+  assert.equal(identified.identificationColor, null);
+  // Compatible splitter output -> splitter input, using existing terminals.
+  d = draft();
+  d.links.push({
+    id: randomUUID(),
+    a: `${extraSplitters[0]}:out:2`,
+    b: input,
+    kind: "PATCH",
+    tray: "Cascata",
+  });
+  await save(box.id, d);
+  const fiberId = current.assets.find((x) => x.id === a.id)!.fibers[0].id;
+  const colorRevision = current.revision,
+    oldDraft = draft();
+  await db.fiberStrand.update({
+    where: { id: fiberId },
+    data: { color: "#123456" },
+  });
+  await save(box.id, oldDraft, 409);
+  current = await ok(`/api/diagrams/${box.id}`);
+  assert.notEqual(current.revision, colorRevision);
+  assert.equal(
+    endpointColor({
+      port: current.assets
+        .find((x) => x.id === a.id)!
+        .terminals.find((p) => p.id === a1)!,
+      asset: current.assets.find((x) => x.id === a.id)!,
+    }),
+    "#123456",
+  );
+  assert.deepEqual(
+    (await ok(`/api/diagrams/${box.id}`)).connections,
+    current.connections,
+  );
   // Legacy edits are also detected, even without a diagram version increment.
   await db.asset.update({
     where: { id: a.id },
@@ -400,7 +522,10 @@ try {
   const afterGeo = JSON.stringify(
     (
       await db.asset.findMany({
-        where: { organizationId: org, id: { not: splitId } },
+        where: {
+          organizationId: org,
+          id: { notIn: [splitId, ...extraSplitters] },
+        },
         orderBy: { id: "asc" },
       })
     ).map((a) => [a.id, a.geometry]),

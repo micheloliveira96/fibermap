@@ -17,6 +17,7 @@ export type DiagramPort = {
   localSide?: string | null;
   routePosition?: number | null;
   occupied?: boolean;
+  identificationColor?: string | null;
 };
 export type DiagramFiber = {
   id: string;
@@ -58,6 +59,7 @@ export type DiagramLayout = {
   legend: boolean;
 };
 export type DiagramDraft = {
+  portColors?: Record<string, string | null>;
   accesses: DiagramAccess[];
   splitters: { id: string; name: string; code: string; ports: number }[];
   links: DiagramLink[];
@@ -143,6 +145,62 @@ export const statusLabel: Record<LocalStatus, string> = {
   DAMAGED: "Interrompida",
   BLOCKED: "Bloqueada",
 };
+export type DiagramEndpoint = {
+  port: DiagramPort;
+  asset: DiagramAsset;
+  access?: DiagramAccess;
+};
+export const neutralPortColor = "#94a3b8";
+export function endpointColor(endpoint: DiagramEndpoint) {
+  const fiber = endpoint.asset.fibers.find(
+    (f) => f.id === endpoint.port.fiberId,
+  );
+  const color = fiber?.color ?? endpoint.port.identificationColor;
+  return color
+    ? (fiberColor[color] ??
+        (/^#[a-f0-9]{6}$/i.test(color) ? color : neutralPortColor))
+    : neutralPortColor;
+}
+export function endpointLabel(endpoint: DiagramEndpoint) {
+  const { asset, port } = endpoint;
+  const fiber = asset.fibers.find((f) => f.id === port.fiberId);
+  return `${asset.code} · ${fiber ? `T${fiber.tube} F${fiber.number} ${fiber.color}` : `${port.label} · ${port.identificationColor ?? "cor neutra"}`}${port.localSide ? ` · ${port.localSide === "IN" ? "chegada" : "continuação"}` : ""}`;
+}
+export function pairError(
+  a: DiagramEndpoint | undefined,
+  b: DiagramEndpoint | undefined,
+  used: Set<string>,
+) {
+  if (!a || !b) return "Selecione duas extremidades.";
+  if (a.port.id === b.port.id)
+    return "A extremidade não pode se conectar a si mesma.";
+  if ([a, b].some((p) => p.port.occupied || used.has(p.port.id)))
+    return "Extremidade ocupada.";
+  for (const p of [a, b]) {
+    const f = p.asset.fibers.find((f) => f.id === p.port.fiberId);
+    if (
+      p.asset.status === "DISABLED" ||
+      (f &&
+        (f.status !== "AVAILABLE" ||
+          (p.access?.fiberStates[f.id] ?? "AVAILABLE") !== "AVAILABLE"))
+    )
+      return "Fibra ou componente indisponível.";
+  }
+  if (!a.port.fiberId && !b.port.fiberId && a.asset.id === b.asset.id)
+    return "Portas do mesmo componente são incompatíveis.";
+  if (
+    a.port.kind === b.port.kind &&
+    ["SPLITTER_IN", "SPLITTER_OUT"].includes(a.port.kind)
+  )
+    return "Conecte uma saída a uma entrada compatível.";
+  const continuous =
+    a.port.attachmentId &&
+    a.port.attachmentId === b.port.attachmentId &&
+    a.port.localSide !== b.port.localSide;
+  if (a.port.fiberId && a.port.fiberId === b.port.fiberId && !continuous)
+    return "As pontas da mesma fibra não formam uma fusão válida.";
+  return "";
+}
 export function sequencePairs(a: string[], b: string[], reverse = false) {
   if (!a.length || a.length !== b.length)
     throw new Error("Selecione intervalos com a mesma quantidade de fibras.");

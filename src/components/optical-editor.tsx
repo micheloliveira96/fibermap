@@ -1,4 +1,5 @@
 "use client";
+import { HelpLink } from "./help-link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
@@ -735,6 +736,7 @@ export default function OpticalEditor() {
         >
           {dark ? <Sun size={19} /> : <Moon size={19} />}
         </button>
+        <HelpLink />
         <a className="editor-inventory" href="/inventario">
           Inventário técnico ↗
         </a>

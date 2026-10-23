@@ -1,4 +1,5 @@
 "use client";
+import { HelpLink } from "./help-link";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { createAuthClient } from "better-auth/react";
 import { useRouter } from "next/navigation";
@@ -597,6 +598,7 @@ export default function Administration({
             </a>
           ))}
         </nav>
+        <HelpLink />
         <a href="/">Abrir mapa óptico ↗</a>
         <button
           onClick={() => {

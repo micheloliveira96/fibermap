@@ -462,7 +462,7 @@
 .od-confirm-backdrop {
   position: absolute;
   inset: 0;
-  z-index: 30;
+  z-index: 110;
   background: #0008;
   display: flex;
   align-items: center;
@@ -590,4 +590,215 @@
     font-size: 11px;
     gap: 4px;
   }
+}
+.od-workspace .od-edge-label {
+  position: absolute;
+  pointer-events: all;
+  max-width: 220px;
+  padding: 3px 6px;
+  border: 1px solid var(--od-border);
+  border-radius: 5px;
+  background: var(--od-panel);
+  color: var(--od-text);
+  font-size: 9px;
+  text-align: center;
+}
+.od-edge-label b,
+.od-edge-label span {
+  display: block;
+}
+.od-edge-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+  color: var(--od-muted);
+  font-size: 8px;
+}
+.od-color-preview {
+  display: block;
+  width: 42px;
+  border: 1px solid var(--od-border);
+  height: 6px;
+  font-size: 0;
+}
+.od-batch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #0009;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.od-batch-dialog {
+  width: min(1080px, 96vw);
+  max-height: 94vh;
+  overflow: auto;
+  background: var(--od-panel);
+  color: var(--od-text);
+  border: 1px solid var(--od-border);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 20px 100px #0008;
+}
+.od-batch-dialog > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+.od-batch-dialog h2 {
+  margin: 0;
+  font-size: 21px;
+}
+.od-batch-dialog p {
+  font-size: 12px;
+  color: var(--od-muted);
+  line-height: 1.5;
+}
+.od-batch-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.od-batch-picker {
+  min-width: 0;
+  border: 1px solid var(--od-border);
+  border-radius: 9px;
+  padding: 12px;
+}
+.od-batch-picker h3 {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+.od-batch-picker small {
+  font-weight: 400;
+  color: var(--od-muted);
+  font-size: 10px;
+}
+.od-batch-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.od-batch-dialog select,
+.od-batch-dialog input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--od-border);
+  border-radius: 5px;
+  color: var(--od-text);
+  background: var(--od-bg);
+}
+.od-batch-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.od-batch-scroll {
+  height: 225px;
+  overflow: auto;
+  margin: 10px 0;
+  border-block: 1px solid var(--od-border);
+}
+.od-batch-scroll fieldset {
+  border: 0;
+  margin: 10px 0;
+  padding: 0;
+}
+.od-batch-scroll legend {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 0;
+}
+.od-batch-scroll label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  padding: 4px;
+  font-size: 10px;
+  margin: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 35px;
+}
+.od-batch-scroll small {
+  display: block;
+  font-size: 9px;
+  margin-top: 2px;
+}
+.od-batch-dialog i {
+  width: 9px;
+  height: 9px;
+  border: 1px solid #7a8b9b;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+.od-unavailable {
+  opacity: 0.6;
+}
+.od-batch-options {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 15px 0;
+}
+.od-batch-options label {
+  flex-direction: row;
+  align-items: center;
+  margin: 0;
+}
+.od-batch-options strong {
+  font-size: 12px;
+  margin-left: auto;
+}
+.od-batch-manual > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.od-batch-table {
+  overflow: auto;
+  max-height: 240px;
+}
+.od-batch-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.od-batch-table td,
+.od-batch-table th {
+  padding: 9px;
+  text-align: left;
+  border-bottom: 1px solid var(--od-border);
+}
+.od-batch-table th {
+  background: var(--od-bg);
+  position: sticky;
+  top: 0;
+}
+.od-batch-dialog > footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 12px;
+}
+.od-batch-dialog > footer p {
+  margin-right: auto;
+  max-width: 440px;
+}
+.od-batch-error {
+  color: #ef7680 !important;
 }

@@ -20,6 +20,15 @@ const states = z.record(
   z.enum(["AVAILABLE", "RESERVED", "DAMAGED", "BLOCKED"]),
 );
 export const diagramSchema = z.object({
+  portColors: z
+    .record(
+      id,
+      z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .nullable(),
+    )
+    .default({}),
   version: z.number().int().min(0),
   revision: z.string().length(64),
   accesses: z
@@ -212,12 +221,21 @@ export async function readDiagram(
           id: a.id,
           version: a.version,
           status: a.status,
-          fibers: a.fibers.map((f) => ({ id: f.id, status: f.status })),
-          terminals: a.terminals.map((t) => ({ id: t.id, links: t.links })),
+          fibers: a.fibers.map((f) => ({
+            id: f.id,
+            status: f.status,
+            color: f.color,
+          })),
+          terminals: a.terminals.map((t) => ({
+            id: t.id,
+            links: t.links,
+            identificationColor: t.identificationColor,
+          })),
         })),
         equipmentPorts: equipment.terminals.map((t) => ({
           id: t.id,
           links: t.links,
+          identificationColor: t.identificationColor,
         })),
         associations,
       }),
@@ -430,6 +448,24 @@ export async function saveDiagram(
         for (const p of ps)
           ports.set(p.id, { port: p, asset, state: "AVAILABLE" });
       }
+      for (const [terminalId, identificationColor] of Object.entries(
+        input.portColors,
+      )) {
+        const endpoint = ports.get(terminalId);
+        if (!endpoint || endpoint.port.fiberId)
+          throw new ApiError(
+            400,
+            "A cor de identificação deve pertencer a uma porta de componente desta caixa.",
+          );
+        await tx.opticalTerminal.updateMany({
+          where: {
+            id: terminalId,
+            organizationId: org,
+            assetId: endpoint.asset.id,
+          },
+          data: { identificationColor },
+        });
+      }
       const occupied = new Set<string>(),
         ids = new Set<string>();
       for (const link of input.links) {
@@ -581,6 +617,7 @@ export async function saveDiagram(
             accesses: input.accesses,
             connections: input.links,
             addedSplitters: input.splitters,
+            portColors: input.portColors,
           },
         },
       });

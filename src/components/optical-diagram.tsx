@@ -34,7 +34,9 @@ import {
   defaultLayout,
   fiberColor,
   statusLabel,
-  sequencePairs,
+  endpointColor,
+  endpointLabel,
+  pairError,
   type DiagramData,
   type DiagramDraft,
   type DiagramAsset,
@@ -46,6 +48,9 @@ import {
 } from "@/lib/diagram-types";
 import "@xyflow/react/dist/style.css";
 import "./optical-diagram.css";
+import { OpticalBatch } from "./optical-batch";
+import { OpticalEdge } from "./optical-edge";
+import { HelpLink } from "./help-link";
 type NodeData = {
   asset: DiagramAsset;
   access?: DiagramAccess;
@@ -131,12 +136,7 @@ const OpticalComponent = memo(function OpticalComponent({
                   ? fiber.status
                   : (access?.fiberStates[fiber.id] ?? "AVAILABLE")
                 : "AVAILABLE";
-            const color = fiber
-              ? (fiberColor[fiber.color] ??
-                (/^#[a-f0-9]{6}$/i.test(fiber.color) ? fiber.color : "#8294ae"))
-              : p.kind === "SPLITTER_IN"
-                ? "#f3b14d"
-                : "#3dc6bb";
+            const color = endpointColor({ port: p, asset, access });
             return (
               <div
                 key={p.id}
@@ -220,6 +220,7 @@ const OpticalComponent = memo(function OpticalComponent({
   );
 });
 const nodeTypes = { optical: OpticalComponent };
+const edgeTypes = { opticalLink: OpticalEdge };
 const layoutFor = (
   draft: DiagramDraft,
   id: string,
@@ -232,6 +233,7 @@ const layoutFor = (
     collapsed: false,
   };
 const initialDraft = (data: DiagramData): DiagramDraft => ({
+  portColors: {},
   accesses: data.accesses,
   splitters: [],
   links: data.connections,
@@ -263,13 +265,7 @@ export default function OpticalDiagram({
     [picked, setPicked] = useState<string | null>(null),
     [startPort, setStartPort] = useState<string | null>(null);
   const [pending, setPending] = useState<DiagramLink[] | null>(null),
-    [batch, setBatch] = useState(false),
-    [batchA, setBatchA] = useState(""),
-    [batchB, setBatchB] = useState(""),
-    [fromA, setFromA] = useState(1),
-    [fromB, setFromB] = useState(1),
-    [amount, setAmount] = useState(12),
-    [reverse, setReverse] = useState(false);
+    [batch, setBatch] = useState(false);
   const [candidate, setCandidate] = useState(""),
     [end, setEnd] = useState<"A" | "B" | "MID">("A"),
     [fraction, setFraction] = useState(50),
@@ -358,7 +354,18 @@ export default function OpticalDiagram({
               fibers: [],
               terminals: splitterPorts(s.id, s.ports),
             })),
-          ]
+          ].map((asset) => ({
+            ...asset,
+            terminals: asset.terminals.map((port) => ({
+              ...port,
+              identificationColor: Object.hasOwn(
+                draft.portColors ?? {},
+                port.id,
+              )
+                ? draft.portColors![port.id]
+                : port.identificationColor,
+            })),
+          }))
         : [],
     [data, draft],
   );
@@ -387,11 +394,8 @@ export default function OpticalDiagram({
     [displayed, draft],
   );
   const portLabel = (id: string) => {
-    const p = ports.get(id),
-      fiber = p?.asset.fibers.find((f) => f.id === p.port.fiberId);
-    return p
-      ? `${p.asset.code} · ${fiber ? `T${fiber.tube} F${fiber.number} ${fiber.color}` : p.port.label}${p.port.localSide ? ` · ${p.port.localSide === "IN" ? "chegada" : "continuação"}` : ""}`
-      : id;
+    const endpoint = ports.get(id);
+    return endpoint ? endpointLabel(endpoint) : id;
   };
   const used = useMemo(
     () => new Set(draft?.links.flatMap((l) => [l.a, l.b]) ?? []),
@@ -423,6 +427,8 @@ export default function OpticalDiagram({
       const links = pairs.map((p) => {
         const a = ports.get(p.a),
           b = ports.get(p.b);
+        const invalid = pairError(a, b, nextUsed);
+        if (invalid) throw Error(invalid);
         if (!a || !b || p.a === p.b)
           throw Error("Selecione duas extremidades válidas.");
         if (
@@ -520,27 +526,21 @@ export default function OpticalDiagram({
         target,
         sourceHandle: `${l.a}:right`,
         targetHandle: l.b,
-        type: "smoothstep",
+        type: "opticalLink",
         selected: selectedLink === l.id,
-        label:
-          l.kind === "PASS_THROUGH"
-            ? "Contínua"
-            : l.kind === "SPLICE"
-              ? "Fusão"
-              : l.kind === "PATCH"
-                ? "Conector"
-                : "Documental",
-        style: {
-          stroke:
-            l.kind === "PASS_THROUGH"
-              ? "#32caa4"
-              : l.kind === "SPLICE"
-                ? "#74aaff"
-                : "#e3b565",
-          strokeWidth: selectedLink === l.id ? 4 : 2,
-          strokeDasharray: l.kind === "DOCUMENTARY" ? "6 4" : undefined,
+        data: {
+          sourceColor: endpointColor(a),
+          targetColor: endpointColor(b),
+          sourceLabel: portLabel(l.a),
+          targetLabel: portLabel(l.b),
+          kind: l.kind,
+          title: `${l.kind === "SPLICE" ? "Fusão" : l.kind === "PASS_THROUGH" ? "Passagem direta" : l.kind === "PATCH" ? "Conector" : "Documental"}\nOrigem: ${portLabel(l.a)}\nDestino: ${portLabel(l.b)}`,
+          onSelect: () => {
+            setSelectedLink(l.id);
+            setPicked(null);
+            setStartPort(null);
+          },
         },
-        labelStyle: { fontSize: 10 },
         interactionWidth: 20,
       },
     ];
@@ -643,32 +643,6 @@ export default function OpticalDiagram({
     setSplitName("");
     setSplitCode("");
   }
-  function batchPreview() {
-    try {
-      const get = (id: string, start: number) => {
-        const asset = displayed.find((a) => a.id === id),
-          access = draft?.accesses.find((a) => a.cableId === id);
-        if (!asset || !access) throw Error("Selecione dois cabos associados.");
-        return Array.from({ length: amount }, (_, i) => {
-          const f = asset.fibers.find((f) => f.number === start + i);
-          const port =
-            f &&
-            accessPorts(asset, access).find(
-              (p) =>
-                p.fiberId === f.id &&
-                (access.end !== "MID" || p.localSide === "IN"),
-            );
-          if (!port) throw Error("Intervalo fora da capacidade do cabo.");
-          return port.id;
-        });
-      };
-      if (!Number.isInteger(amount) || amount < 1 || amount > 2880)
-        throw Error("Quantidade inválida.");
-      preview(sequencePairs(get(batchA, fromA), get(batchB, fromB), reverse));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
   function changeState(state: LocalStatus) {
     if (!chosen?.access || !chosenFiber || !editable) return;
     if (used.has(chosen.port.id) && state !== "AVAILABLE") {
@@ -736,6 +710,7 @@ export default function OpticalDiagram({
                 : "Conectando"}
         </span>
         <div className="od-top-actions">
+          <HelpLink />
           <button
             aria-label="Desfazer"
             disabled={!editable || !history?.past.length}
@@ -1042,88 +1017,19 @@ export default function OpticalDiagram({
             </label>
           </div>
           {batch && editable && (
-            <div className="od-batch">
-              <strong>Fusão em lote</strong>
-              <label>
-                Cabo de origem
-                <select
-                  value={batchA}
-                  onChange={(e) => setBatchA(e.target.value)}
-                >
-                  <option value="">Selecione</option>
-                  {displayed
-                    .filter((a) => a.fibers.length)
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.code}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                Fibra inicial
-                <input
-                  type="number"
-                  min="1"
-                  value={fromA}
-                  onChange={(e) => setFromA(Number(e.target.value))}
-                />
-              </label>
-              <label>
-                Cabo de destino
-                <select
-                  value={batchB}
-                  onChange={(e) => setBatchB(e.target.value)}
-                >
-                  <option value="">Selecione</option>
-                  {displayed
-                    .filter((a) => a.fibers.length)
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.code}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                Fibra inicial
-                <input
-                  type="number"
-                  min="1"
-                  value={fromB}
-                  onChange={(e) => setFromB(Number(e.target.value))}
-                />
-              </label>
-              <label>
-                Quantidade
-                <input
-                  type="number"
-                  min="1"
-                  max="2880"
-                  value={amount}
-                  onChange={(e) => setAmount(Number(e.target.value))}
-                />
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={reverse}
-                  onChange={(e) => setReverse(e.target.checked)}
-                />{" "}
-                Inverter destino
-              </label>
-              <small>
-                Em sangrias, o lote usa a face de chegada. Corte as passagens
-                correspondentes antes.
-              </small>
-              <button onClick={batchPreview}>Pré-visualizar lote</button>
-            </div>
+            <OpticalBatch
+              ports={ports}
+              used={used}
+              onPreview={preview}
+              onClose={() => setBatch(false)}
+            />
           )}
           {data && draft ? (
             <ReactFlow<OpticalNode, Edge>
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
               connectionMode={ConnectionMode.Loose}
               onInit={(instance) => {
                 flow.current = instance;
@@ -1225,7 +1131,10 @@ export default function OpticalDiagram({
                   {name}
                 </span>
               ))}
-              <small>● conectada · ○ livre · verde contínua · azul fusão</small>
+              <small>
+                ● conectada · ○ livre · linhas: cores das extremidades · porta
+                sem cor: neutra
+              </small>
             </div>
           )}
         </main>
@@ -1297,6 +1206,44 @@ export default function OpticalDiagram({
                 A remoção só será aplicada ao salvar. Desfazer restaura a
                 ligação.
               </p>
+            </>
+          ) : chosen && !chosen.port.fiberId ? (
+            <>
+              <h3>
+                {chosen.asset.code} · {chosen.port.label}
+              </h3>
+              <p>Cor de identificação da porta</p>
+              <label>
+                Cor
+                <input
+                  aria-label="Cor da porta"
+                  type="color"
+                  disabled={!editable}
+                  value={endpointColor(chosen)}
+                  onInput={(e) => {
+                    const color = e.currentTarget.value;
+                    commit((d) => {
+                      (d.portColors ??= {})[chosen.port.id] = color;
+                      return d;
+                    });
+                  }}
+                />
+              </label>
+              <button
+                disabled={!editable}
+                onClick={() =>
+                  commit((d) => {
+                    (d.portColors ??= {})[chosen.port.id] = null;
+                    return d;
+                  })
+                }
+              >
+                Usar cor neutra
+              </button>
+              <small>
+                A identificação visual não altera o ID técnico nem define uma
+                cor física de fibra. Use Salvar montagem para gravar.
+              </small>
             </>
           ) : chosen && chosenFiber ? (
             <>
@@ -1411,7 +1358,15 @@ export default function OpticalDiagram({
               {pending.map((l) => (
                 <div key={l.id}>
                   <span>{portLabel(l.a)}</span>
-                  <b>↔</b>
+                  <b
+                    className="od-color-preview"
+                    style={{
+                      background: `linear-gradient(90deg, ${endpointColor(ports.get(l.a)!)} 50%, ${endpointColor(ports.get(l.b)!)} 50%)`,
+                    }}
+                    title={l.kind === "SPLICE" ? "Fusão" : "Conector"}
+                  >
+                    ↔
+                  </b>
                   <span>{portLabel(l.b)}</span>
                 </div>
               ))}
