@@ -706,7 +706,7 @@ export async function POST(r: Request) {
               m.organizationId,
               op === "user.status" ? "USER_STATUS_UPDATED" : "SESSIONS_REVOKED",
               id,
-              { active: op === "user.status" ? raw.active : target.active },
+              { active: op === "user.status" ? z.boolean().parse(raw.active) : target.active },
             );
             return { ok: true };
           }
