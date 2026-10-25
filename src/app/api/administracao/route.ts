@@ -325,10 +325,22 @@ export async function GET(r: Request) {
 export async function POST(r: Request) {
   try {
     sameOrigin(r);
+    // Enforce the actual payload size even when Content-Length is missing or forged.
     if (Number(r.headers.get("content-length") || 0) > 250000)
       throw new ApiError(413, "Formulário muito grande.");
-    const raw = await r.json(),
-      op = z.string().parse(raw.op),
+    const body = await r.text();
+    if (new TextEncoder().encode(body).byteLength > 250000)
+      throw new ApiError(413, "Formulário muito grande.");
+    let raw: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        throw new Error("Invalid JSON object");
+      raw = parsed as Record<string, unknown>;
+    } catch {
+      throw new ApiError(400, "JSON inválido.");
+    }
+    const op = z.string().parse(raw.op),
       platform = new URL(r.url).searchParams.get("scope") === "platform";
     let generated: { token: string; email: string } | null = null;
     let out: unknown;
