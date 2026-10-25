@@ -352,7 +352,7 @@ export default function EditorMap(props: Props) {
         properties: {
           id: a.id,
           color: s.highlighted.includes(a.id)
-            ? "#ffbb33"
+            ? "#a3e635"
             : a.id === s.selectedId
               ? s.draftColor
               : a.color,
